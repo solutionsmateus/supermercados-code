@@ -60,11 +60,25 @@ def clicar_nas_imagens():
 
    
     abas = driver.window_handles
-    for i in range(1, min(3, len(abas))):  
+    
+    for i in range(1, min(3, len(abas))):
         driver.switch_to.window(abas[i])
-        time.sleep(5)  
-        screenshot_path = ENCARTE_DIR / f"Ofertas Novo Atacarejo{i}.png"
-        driver.save_screenshot(str(screenshot_path))
+        time.sleep(5)
+        
+        screenshot_path_1 = ENCARTE_DIR / f"Ofertas Novo Atacarejo{i}_pag1.png"
+        driver.save_screenshot(str(screenshot_path_1))
+        time.sleep(2)
+        
+        try:
+            next_button = driver.find_element(By.CSS_SELECTOR, "div.pdff-ui-btn.pdff-ui-next.pdff-ui-alt.fa.fa-chevron-right[title='Next Page']")
+            next_button.click()
+            time.sleep(5) 
+            
+            screenshot_path_2 = ENCARTE_DIR / f"Ofertas Novo Atacarejo{i}_pag2.png"
+            driver.save_screenshot(str(screenshot_path_2))
+        except Exception as e:
+            print(f"Erro ao clicar ou capturar a página 2 da aba {i}: {e}")
+
 
 selecionar_loja()
 clicar_nas_imagens()
