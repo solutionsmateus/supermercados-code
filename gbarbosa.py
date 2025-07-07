@@ -26,8 +26,6 @@ driver = webdriver.Chrome(options=options)
 wait = WebDriverWait(driver, 20)
 
 def encontrar_data():
-    
-    #P LOCALED DATA"
     try:
         enc_data = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.XPATH, '//p[contains("TEXT")]'))
@@ -55,12 +53,15 @@ def baixar_estado(sigla_estado):
         print(f"Erro ao selecionar o estado {sigla_estado}: {e}")
         return
 
-    encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
-
-    for i in range(len(encartes)):
+    index = 0
+    while True:
         try:
-            print(f"\n Abrindo encarte {i+1}...")
-            encartes[i].click()
+            encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
+            if index >= len(encartes):
+                break
+
+            print(f"\n Abrindo encarte {index+1}...")
+            encartes[index].click()
             time.sleep(2)
 
             menu_btn = wait.until(EC.element_to_be_clickable(
@@ -77,25 +78,23 @@ def baixar_estado(sigla_estado):
             driver.get(BASE_URL)
             time.sleep(3)
 
-
             botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[text()="{sigla_estado}"]')))
             botao_estado.click()
             time.sleep(3)
 
-    
-            encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
+            index += 1
 
         except Exception as e:
-            print(f" Erro no encarte {i+1}: {e}")
+            print(f"❌ Erro no encarte {index+1}: {e}")
             driver.get(BASE_URL)
             time.sleep(3)
             try:
                 botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[text()="{sigla_estado}"]')))
                 botao_estado.click()
                 time.sleep(3)
-                encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
             except:
-                continue
+                break
+            index += 1
             continue
 
 baixar_estado("AL")
