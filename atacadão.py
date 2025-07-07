@@ -18,7 +18,7 @@ LOJAS_ESTADOS = {
     "PE": ("Recife", "Recife Avenida Recife"),
     "PI": ("Teresina", "Teresina Primavera"),
     "SE": ("Aracaju", "Aracaju Tancredo Neves"),
-    "BA": ("Vitória da Conquista", "Vitória da Conquista Brumado"),
+    "BA": ("Vitória Da Conquista", "Vitória da Conquista Brumado"),
 }
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
