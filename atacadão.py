@@ -12,13 +12,13 @@ from selenium.webdriver.support import expected_conditions as EC
 LOJAS_ESTADOS = {
     "MA": ("São Luís", "São Luís"),
     "AL": ("Maceió", "Maceió Praia"),
-    "CE": ("Fortaleza", "Fortaleza Aeroporto"),
+    "CE": ("Fortaleza", "Fortaleza Fátima"),
     "PA": ("Belém", "Belém Portal da Amazônia"),
-    "PB": ("João Pessoa", "João Pessoa"),
+    "PB": ("João Pessoa", "João Pessoa Bessa"),
     "PE": ("Recife", "Recife Avenida Recife"),
     "PI": ("Teresina", "Teresina Primavera"),
     "SE": ("Aracaju", "Aracaju Tancredo Neves"),
-    "BA": ("Vitória da Conquista", "Vitória da Conquista"),
+    "BA": ("Vitória da Conquista", "Vitória da Conquista Brumado"),
 }
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
