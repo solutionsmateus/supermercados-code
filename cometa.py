@@ -48,19 +48,16 @@ def processar_encartes():
             pasta_encarte.mkdir(parents=True, exist_ok=True)
 
             pagina = 1
-            while True:
+            try:
                 nome_arquivo = f"{nome_pasta}_pagina_{pagina}.png"
                 salvar_print(driver, pasta_encarte, nome_arquivo)
-
-                try:
-                    btn_proximo = driver.find_element(By.CLASS_NAME, "flipbook-right-arrow")
-                    if not btn_proximo.is_displayed():
-                        break
-                    btn_proximo.click()
-                    time.sleep(2)
-                    pagina += 1
-                except:
-                    break
+                btn_proximo = driver.find_element(By.XPATH, "//span[contains(@class, 'flipbook-right-arrow')]")
+                btn_proximo.click()
+                driver.save_screenshot(str(ENCARTE_DIR))
+                time.sleep(2)
+                pagina += 1
+            except:
+                    pass
 
         except Exception as e:
             print(f"❌ Erro ao processar encarte {i + 1}: {e}")
