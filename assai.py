@@ -30,9 +30,28 @@ REGIAO_POR_ESTADO = {
 BASE_URL = "https://www.assai.com.br/ofertas"
 desktop_path = Path.home() / "Desktop/Encartes-Concorrentes/Assai"
 
-options = webdriver.ChromeOptions()
-options.add_argument("--start-maximized")
-driver = webdriver.Chrome(options=options)
+# === HEADLESS CHROME ===
+def build_headless_chrome():
+    options = webdriver.ChromeOptions()
+    # Headless moderno do Chrome
+    options.add_argument("--headless=new")
+    # Estabilidade em ambientes CI (GitHub Actions, containers, etc.)
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    # Tamanho de viewport consistente (substitui start-maximized no headless)
+    options.add_argument("--window-size=1920,1080")
+    # User-Agent explícito ajuda alguns sites a não “minimizar” conteúdo
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    # Idioma (seletivos de loja/estado às vezes dependem do locale)
+    options.add_argument("--lang=pt-BR,pt")
+    return webdriver.Chrome(options=options)
+
+driver = build_headless_chrome()
 wait = WebDriverWait(driver, 30)
 
 def encontrar_data():
@@ -189,7 +208,10 @@ try:
 
 except Exception as e:
     print(f"Erro crítico: {str(e)}")
-    driver.save_screenshot(str(desktop_path / "erro_encartes.png"))
-
+    try:
+        # Mesmo em headless conseguimos salvar screenshot para debug
+        driver.save_screenshot(str(desktop_path / "erro_encartes.png"))
+    except Exception as _:
+        pass
 finally:
     driver.quit()
