@@ -8,9 +8,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 
-
 LOJAS_ESTADOS = {
-    "MA": ("São Luís", "São Luís"),
     "AL": ("Maceió", "Maceió Praia"),
     "CE": ("Fortaleza", "Fortaleza Fátima"),
     "PA": ("Belém", "Belém Portal da Amazônia"),
@@ -19,20 +17,37 @@ LOJAS_ESTADOS = {
     "PI": ("Teresina", "Teresina Primavera"),
     "SE": ("Aracaju", "Aracaju Tancredo Neves"),
     "BA": ("Vitória Da Conquista", "Vitória da Conquista"),
+    "MA": ("São Luís", "São Luís")
 }
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
 ENCARTE_DIR = Path.home() / "Desktop/Encartes-Concorrentes/Atacadão"
 
-options = webdriver.ChromeOptions()
-options.add_argument("--start-maximized")
-driver = webdriver.Chrome(options=options)
+# === CHROME HEADLESS ===
+def build_headless_chrome():
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")              # headless moderno
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    options.add_argument("--window-size=1920,1080")     # substitui start-maximized
+    options.add_argument("--lang=pt-BR,pt")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    return webdriver.Chrome(options=options)
+
+driver = build_headless_chrome()
 wait = WebDriverWait(driver, 20)
 
 def encontrar_data():
     try:
         enc_data = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.XPATH, '//p[contains(@class, "text-xs text-neutral-400")]'))
+            EC.presence_of_all_elements_located(
+                (By.XPATH, '//p[contains(@class, "text-xs text-neutral-400")]')
+            )
         )
     except:
         return "sem_data"
@@ -51,13 +66,20 @@ def clicar_confirmar():
         )
         confirmar_button.click()
     except:
-        pass  
-    
+        pass
 
 def selecionar_uf_cidade(uf, cidade):
-    Select(wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[96px]')]")))).select_by_value(uf)
+    Select(
+        wait.until(EC.presence_of_element_located(
+            (By.XPATH, "//select[contains(@class, 'md:w-[96px]')]")
+        ))
+    ).select_by_value(uf)
     time.sleep(1)
-    Select(wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[360px]')]")))).select_by_visible_text(cidade)
+    Select(
+        wait.until(EC.presence_of_element_located(
+            (By.XPATH, "//select[contains(@class, 'md:w-[360px]')]")
+        ))
+    ).select_by_visible_text(cidade)
     time.sleep(1)
 
 def clicar_loja_por_nome(loja_nome):
@@ -78,7 +100,6 @@ def clicar_loja_por_nome(loja_nome):
 
 def baixar_encartes(uf, cidade, loja_nome):
     print("Buscando encartes...")
-
     try:
         time.sleep(2)
         links = driver.find_elements(By.XPATH, "//a[contains(@href, 'Flyer/?id=')]")
@@ -87,7 +108,6 @@ def baixar_encartes(uf, cidade, loja_nome):
             print("Nenhum link de encarte encontrado.")
             return
 
-      
         loja_segura = re.sub(r'[\\/*?:"<>|,\n\r]+', "_", loja_nome).strip().replace(" ", "_")
         pasta_destino = ENCARTE_DIR / uf / cidade / loja_segura
         pasta_destino.mkdir(parents=True, exist_ok=True)
@@ -101,6 +121,7 @@ def baixar_encartes(uf, cidade, loja_nome):
 
             try:
                 response = requests.get(url, timeout=15)
+                response.raise_for_status()
                 with open(caminho, "wb") as f:
                     f.write(response.content)
                 print(f" Baixado: {nome_arquivo}")
