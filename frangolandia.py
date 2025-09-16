@@ -5,17 +5,21 @@ import requests
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://frangolandia.com/encartes/"
-ENCARTE_DIR = Path.home() / "Desktop/Encartes-Concorrentes/Frangolandia"
-os.makedirs(ENCARTE_DIR, exist_ok=True)
+
+# === SAÍDA PADRONIZADA (usa env OUTPUT_DIR; fallback ./Encartes/Frangolandia) ===
+BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
+ENCARTE_DIR = BASE_OUTPUT / "Frangolandia"
+ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
+print(f"[frangolandia.py] Pasta base de saída: {ENCARTE_DIR}")
 
 # ========= CHROME HEADLESS =========
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
-    # preferências (mantive as suas para PDF; não atrapalham, mesmo não sendo usadas aqui)
+    # preferências (PDFs, se houver)
     prefs = {
         "download.prompt_for_download": False,
         "plugins.always_open_pdf_externally": True
@@ -39,8 +43,12 @@ def build_headless_chrome():
 driver = build_headless_chrome()
 wait = WebDriverWait(driver, 15)
 
+def slugify(txt: str) -> str:
+    txt = re.sub(r'[\\/*?:"<>|\s]+', '_', (txt or '').strip())
+    return txt[:80] or "sem_data"
+
 def encontrar_data():
-    # Exemplo de busca por textos de botões/labels na página (ajuste o seletor se quiser usar)
+    # Exemplo de busca por textos na página (ajuste se precisar)
     try:
         enc_data = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located(
@@ -51,10 +59,9 @@ def encontrar_data():
         return "sem_data"
     
     for div in enc_data:
-        texto = div.text.strip()
+        texto = (div.text or "").strip()
         if texto:
-            nome_pasta = re.sub(r'[\\/*?:"<>|\s]', '_', texto)
-            return nome_pasta
+            return slugify(texto)
     return "sem_data"
 
 def coleta_encartes():
@@ -62,6 +69,7 @@ def coleta_encartes():
     time.sleep(3)
     encartes = driver.find_elements(By.CSS_SELECTOR, "a.jet-engine-listing-overlay-link")
     links = [e.get_attribute("href") for e in encartes if e.get_attribute("href")]
+    print(f"{len(links)} link(s) de encarte encontrados na listagem.")
     return links
 
 def processar_encartes(links):
@@ -74,10 +82,10 @@ def processar_encartes(links):
     for url in links:
         try:
             driver.get(url)
-            print(f"\n Acessando: {url}")
+            print(f"\nAcessando: {url}")
             time.sleep(3)
 
-            # Clica nos itens da galeria (se houver lightbox/carrossel)
+            # Tenta clicar itens da galeria (lightbox/carrossel), quando existir
             galeria_itens = driver.find_elements(
                 By.CSS_SELECTOR, "a.e-gallery-item.elementor-gallery-item.elementor-animated-content"
             )
@@ -90,16 +98,20 @@ def processar_encartes(links):
                 except Exception as click_err:
                     print(f" Falha ao clicar no item da galeria: {click_err}")
 
-            # Busca imagens (ajuste o path do ano se precisar generalizar)
-            imagens = driver.find_elements(By.CSS_SELECTOR, "img[src*='uploads/2025/']")
+            # Seleciona imagens do uploads (ano flexível: qualquer /uploads/20xx/)
+            imagens = driver.find_elements(By.CSS_SELECTOR, "img[src*='uploads/20']")
             if not imagens:
                 print(" Nenhuma imagem de encarte encontrada.")
                 continue
 
-            nome_base = url.rstrip('/').split('/')[-1] or "encarte"
+            nome_base = slugify(url.rstrip('/').split('/')[-1] or "encarte")
+            pasta_destino = ENCARTE_DIR / nome_base
+            pasta_destino.mkdir(parents=True, exist_ok=True)
+            print(f" Pasta do encarte: {pasta_destino}")
+
             for i, img in enumerate(imagens, start=1):
                 src = img.get_attribute("src")
-                nome_arquivo = f"{ENCARTE_DIR}/{nome_base}_{i}.jpg"
+                caminho = pasta_destino / f"{nome_base}_{i}.jpg"
 
                 # Tenta baixar direto
                 baixou = False
@@ -107,22 +119,22 @@ def processar_encartes(links):
                     try:
                         resp = session.get(src, timeout=20)
                         if resp.status_code == 200 and resp.content:
-                            with open(nome_arquivo, "wb") as f:
+                            with open(caminho, "wb") as f:
                                 f.write(resp.content)
-                            print(f" Imagem baixada: {nome_arquivo}")
+                            print(f" Imagem baixada: {caminho}")
                             baixou = True
                         else:
                             print(f" Download falhou ({resp.status_code}) para: {src}")
                     except Exception as req_err:
                         print(f" Erro no download de {src}: {req_err}")
 
-                # Fallback: screenshot do elemento
+                # Fallback: screenshot do elemento visível
                 if not baixou:
                     try:
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", img)
                         time.sleep(0.3)
-                        img.screenshot(nome_arquivo)
-                        print(f" Screenshot salva: {nome_arquivo}")
+                        img.screenshot(str(caminho))
+                        print(f" Screenshot salva: {caminho}")
                     except Exception as screenshot_err:
                         print(f" Falha ao salvar imagem: {screenshot_err}")
 
@@ -132,7 +144,7 @@ def processar_encartes(links):
 try:
     links = coleta_encartes()
     processar_encartes(links)
-    print("\n Processo finalizado.")
+    print("\nProcesso finalizado.")
 except Exception as e:
     print(f" Erro geral: {e}")
 finally:
