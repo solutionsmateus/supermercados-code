@@ -8,6 +8,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 
+# === SAÍDA PADRONIZADA (ARTIFACT) ============================================
+# Lê do ambiente (OUTPUT_DIR), senão usa ./Encartes
+BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
+ENCARTE_DIR = BASE_OUTPUT / "Atacadao"
+ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
+print(f"[atacadao.py] Pasta de saída: {ENCARTE_DIR}")
+# ============================================================================
+
 LOJAS_ESTADOS = {
     "AL": ("Maceió", "Maceió Praia"),
     "CE": ("Fortaleza", "Fortaleza Fátima"),
@@ -21,17 +29,16 @@ LOJAS_ESTADOS = {
 }
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
-ENCARTE_DIR = Path.home() / "Desktop/Encartes-Concorrentes/Atacadão"
 
 # === CHROME HEADLESS ===
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")              # headless moderno
+    options.add_argument("--headless=new")              
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-features=VizDisplayCompositor")
-    options.add_argument("--window-size=1920,1080")     # substitui start-maximized
+    options.add_argument("--window-size=1920,1080")     
     options.add_argument("--lang=pt-BR,pt")
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -124,7 +131,7 @@ def baixar_encartes(uf, cidade, loja_nome):
                 response.raise_for_status()
                 with open(caminho, "wb") as f:
                     f.write(response.content)
-                print(f" Baixado: {nome_arquivo}")
+                print(f" Baixado: {caminho}")
             except Exception as e:
                 print(f"Erro ao baixar {url}: {e}")
 
