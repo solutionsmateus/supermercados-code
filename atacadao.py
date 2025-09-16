@@ -131,7 +131,7 @@ def baixar_encartes(uf, cidade, loja_nome):
                 response.raise_for_status()
                 with open(caminho, "wb") as f:
                     f.write(response.content)
-                print(f" Baixado: {caminho}")
+                print(f" Baixado: {nome_arquivo}")
             except Exception as e:
                 print(f"Erro ao baixar {url}: {e}")
 
