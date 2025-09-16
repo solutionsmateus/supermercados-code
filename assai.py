@@ -1,13 +1,11 @@
 import os
 import time
-import requests
 import unicodedata
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from datetime import datetime
 import re
 
 # === SAÍDA PADRONIZADA (ARTIFACT) ============================================
@@ -112,47 +110,58 @@ def select_contains_noaccent(select_el, target_text, timeout=10) -> bool:
             return True
     return False
 
+def screenshot_slide(download_dir: Path, jornal_num: int, page_num: int) -> bool:
+    """
+    Faz screenshot do <img> visível no slider de ofertas.
+    Retorna True se salvou, False caso contrário.
+    """
+    try:
+        # tenta pegar a imagem do slide ativo
+        img = wait.until(EC.visibility_of_element_located((
+            By.XPATH,
+            # imagem principal dentro do slider; aceita .jpeg/.jpg/.png
+            "//div[contains(@class,'ofertas-slider')]//img[contains(@src,'.jp') or contains(@src,'.png')]"
+        )))
+        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", img)
+        time.sleep(0.2)
+        filepath = download_dir / f"encarte_j{jornal_num}_p{page_num}.png"
+        img.screenshot(str(filepath))
+        print(f"  Screenshot salvo: {filepath}")
+        return True
+    except Exception as e:
+        print(f"  Falha ao capturar screenshot da página {page_num} do jornal {jornal_num}: {e}")
+        return False
+
+def clicar_jornal(i: int) -> bool:
+    """
+    Tenta clicar no botão da aba do Jornal i usando seletores alternativos.
+    """
+    candidatos = [
+        f"//button[contains(., 'Jornal de Ofertas {i}')]",
+        f"//button[contains(., 'Jornal {i}')]",
+        f"//button[contains(., '{i}') and contains(., 'Jornal')]",
+        f"(//button[contains(., 'Jornal')])[{i}]"  # fallback por posição
+    ]
+    for xp in candidatos:
+        try:
+            btn = wait.until(EC.element_to_be_clickable((By.XPATH, xp)))
+            if click_robusto(driver, btn):
+                return True
+        except Exception:
+            continue
+    return False
+
 def baixar_encartes(jornal_num, download_dir):
     page_num = 1
-    downloaded_urls = set()
     download_dir.mkdir(parents=True, exist_ok=True)
-
-    # sessão com headers (evita alguns bloqueios)
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": "Mozilla/5.0",
-        "Referer": driver.current_url
-    })
 
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
-        links_download = wait.until(
-            EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@class,'download') and contains(@href,'.jpeg')]")
-            )
-        )
-        current_page_urls = []
-        for link in links_download:
-            url = link.get_attribute("href")
-            if url and url not in downloaded_urls:
-                current_page_urls.append(url)
-                downloaded_urls.add(url)
-
-        if not current_page_urls and page_num > 1:
+        # Em vez de baixar via requests (403), fazemos screenshot do slide visível
+        ok = screenshot_slide(download_dir, jornal_num, page_num)
+        if not ok and page_num == 1:
+            # nada visível: não há jornal/próxima página
             break
-
-        for idx, url in enumerate(current_page_urls, start=1):
-            try:
-                response = sess.get(url, timeout=30)
-                if response.status_code == 200 and response.content:
-                    file_path = download_dir / f"encarte_j{jornal_num}_p{page_num}_{idx}_{int(time.time())}.jpg"
-                    with open(file_path, "wb") as f:
-                        f.write(response.content)
-                    print(f"  Encarte salvo: {file_path}")
-                else:
-                    print(f"  Falha no download: {url} (HTTP {response.status_code})")
-            except Exception as e:
-                print(f"  Erro ao baixar {url}: {e}")
 
         # próxima página do slider
         try:
@@ -161,9 +170,10 @@ def baixar_encartes(jornal_num, download_dir):
             time.sleep(0.3)
             if not click_robusto(driver, next_button):
                 break
-            time.sleep(2)
+            time.sleep(1.2)
             page_num += 1
-        except:
+        except Exception:
+            # sem botão next ou acabou páginas
             break
 
 # === MAIN ====================================================================
@@ -191,7 +201,6 @@ try:
             ok = select_contains_noaccent(estado_select, estado)
             if not ok:
                 raise RuntimeError(f"Estado '{estado}' não encontrado")
-
         time.sleep(0.8)
 
         # Região (quando existir)
@@ -232,15 +241,16 @@ try:
         scroll_down_and_up()
         baixar_encartes(1, pasta_loja_data)
 
-        # Tenta "Jornal de Ofertas 2..3"
+        # Tenta alternar para os demais jornais, mas só se o botão existir
         for i in range(2, 4):
             try:
-                # botão por XPath com contains
-                clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(3)
-                aguardar_elemento("div.ofertas-slider", timeout=30)
-                scroll_down_and_up()
-                baixar_encartes(i, pasta_loja_data)
+                if clicar_jornal(i):
+                    time.sleep(2)
+                    aguardar_elemento("div.ofertas-slider", timeout=30)
+                    scroll_down_and_up()
+                    baixar_encartes(i, pasta_loja_data)
+                else:
+                    print(f" Jornal {i} não encontrado para {loja}.")
             except Exception as e:
                 print(f" Jornal {i} indisponível para {loja}: {str(e)}")
 
