@@ -68,7 +68,7 @@ def encontrar_data():
     except:
         return "sem_data"
     for div in enc_data:
-        texto = (div.text or "").strip()
+        texto = div.text.strip()
         if texto:
             # normaliza p/ nome de pasta
             nome_pasta = re.sub(r'[\\/*?:"<>|\s]+', '_', texto)
@@ -90,7 +90,7 @@ def scroll_down_and_up():
     driver.execute_script("window.scrollTo(0, 1);")
     time.sleep(0.5)
 
-def baixar_encartes(jornal_num: int, download_dir: Path):
+def baixar_encartes(jornal_num, download_dir):
     page_num = 1
     downloaded_urls = set()
     download_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +140,7 @@ def select_by_visible_text_contains(select_el, target_text, timeout=10):
     WebDriverWait(driver, timeout).until(lambda d: len(select_el.find_elements(By.TAG_NAME, "option")) > 0)
     sel = Select(select_el)
     opts = select_el.find_elements(By.TAG_NAME, "option")
-    alvo_norm = (target_text or "").strip().lower()
+    alvo_norm = target_text.strip().lower()
     for o in opts:
         if alvo_norm in o.text.strip().lower():
             sel.select_by_visible_text(o.text)
@@ -195,7 +195,7 @@ try:
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
 
-        nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
+        nome_loja = loja.replace(' ', '_').replace('(', '').replace(')', '')
         pasta_loja_data = OUTPUT_DIR / f"assai_{nome_loja}_{data_nome}"
         pasta_loja_data.mkdir(parents=True, exist_ok=True)
         print(f"  Salvando em: {pasta_loja_data}")
