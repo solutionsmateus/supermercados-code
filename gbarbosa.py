@@ -4,12 +4,16 @@ import time
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://blog.gbarbosa.com.br/ofertas/"
-ENCARTE_DIR = Path.home() / "Desktop/Encartes-Concorrentes/G-Barbosa"
-ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
+
+# ===== Saída padronizada (usa OUTPUT_DIR; fallback ./Encartes/G-Barbosa) =====
+BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
+DOWNLOAD_BASE = BASE_OUTPUT / "G-Barbosa"
+DOWNLOAD_BASE.mkdir(parents=True, exist_ok=True)
+print(f"[gbarbosa.py] Pasta base de saída: {DOWNLOAD_BASE}")
 
 # ===== Chrome headless =====
 def build_headless_chrome(download_dir: Path):
@@ -36,7 +40,7 @@ def build_headless_chrome(download_dir: Path):
     options.add_experimental_option("prefs", prefs)
     return webdriver.Chrome(options=options)
 
-driver = build_headless_chrome(ENCARTE_DIR)
+driver = build_headless_chrome(DOWNLOAD_BASE)
 wait = WebDriverWait(driver, 25)
 
 def _list_files(dirpath: Path):
@@ -45,32 +49,39 @@ def _list_files(dirpath: Path):
     except Exception:
         return set()
 
-def _wait_new_download(dirpath: Path, before: set, timeout: int = 60):
+def _wait_new_download(dirpath: Path, before: set, timeout: int = 120) -> Path | None:
     """
     Espera aparecer um novo arquivo na pasta (e terminar o .crdownload).
     Retorna o Path do arquivo novo ou None se não aparecer.
     """
     end = time.time() + timeout
-    last_size = {}
     while time.time() < end:
         files = _list_files(dirpath)
         new_files = [f for f in files - before if not f.name.endswith(".crdownload")]
         if new_files:
-            # garante que terminou (tamanho estável por 2 checagens)
+            # garante término do download verificando tamanho estável
             for nf in new_files:
-                size1 = nf.stat().st_size
+                s1 = nf.stat().st_size
                 time.sleep(1.5)
-                size2 = nf.stat().st_size
-                if size2 == size1:
+                s2 = nf.stat().st_size
+                if s1 == s2 and s2 > 0:
                     return nf
         time.sleep(1)
     return None
 
+def _sanitize(s: str) -> str:
+    return re.sub(r'[\\/*?:"<>|]+', "_", s).strip()
+
 def baixar_estado(uf: str):
-    print(f"\n Baixando encartes do estado: {uf}")
+    uf = uf.strip().upper()
+    pasta_uf = (DOWNLOAD_BASE / uf)
+    pasta_uf.mkdir(parents=True, exist_ok=True)
+
+    print(f"\nBaixando encartes do estado: {uf}")
     driver.get(BASE_URL)
     time.sleep(5)
 
+    # Seleciona o estado
     try:
         botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
         botao_estado.click()
@@ -83,15 +94,17 @@ def baixar_estado(uf: str):
     while True:
         try:
             encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
-            if index >= len(encartes):
+            if index >= len(encartes) or len(encartes) == 0:
+                print("Não há mais encartes para este estado.")
                 break
 
-            print(f"\n Abrindo encarte {index+1} de {len(encartes)}...")
-            # re-coleta elementos para evitar stale references
+            print(f"\nAbrindo encarte {index+1} de {len(encartes)}…")
+            # Recoleta para evitar stale references
             encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
             encartes[index].click()
             time.sleep(2)
 
+            # Abre menu e botão de download
             menu_btn = wait.until(EC.element_to_be_clickable(
                 (By.XPATH, '//div[contains(@class, "df-ui-btn") and contains(@class, "df-ui-more")]')
             ))
@@ -102,23 +115,30 @@ def baixar_estado(uf: str):
                 (By.XPATH, '//a[contains(@class, "df-ui-download")]')
             ))
 
-            # monitora pasta antes do clique
-            before = _list_files(ENCARTE_DIR)
+            before = _list_files(DOWNLOAD_BASE)
             download_btn.click()
-            print(" Download solicitado…")
+            print("Download solicitado…")
 
-            # espera arquivo novo
-            arquivo = _wait_new_download(ENCARTE_DIR, before, timeout=120)
+            arquivo = _wait_new_download(DOWNLOAD_BASE, before, timeout=120)
             if arquivo:
-                print(f" Download concluído: {arquivo.name}")
+                # renomeia e move p/ pasta do UF
+                base_name = _sanitize(arquivo.stem)
+                destino = pasta_uf / f"{base_name}.pdf"
+                # evita overwrite
+                k = 1
+                while destino.exists():
+                    destino = pasta_uf / f"{base_name}_{k}.pdf"
+                    k += 1
+                arquivo.replace(destino)
+                print(f"Download concluído: {destino}")
             else:
-                print(" ⚠️ Não detectei novo arquivo na pasta (timeout).")
+                print("⚠️ Não detectei novo arquivo na pasta (timeout).")
 
-            # volta para lista e re-filtra o estado
+            # Volta para lista e reabre o estado
             driver.get(BASE_URL)
             time.sleep(3)
             try:
-                botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()=\"{uf}\"]')))
+                botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
                 botao_estado.click()
                 time.sleep(3)
             except Exception as e:
@@ -128,12 +148,12 @@ def baixar_estado(uf: str):
             index += 1
 
         except Exception as e:
-            print(f" Erro no encarte {index+1}: {e}")
-            # tenta recuperar
+            print(f"Erro no encarte {index+1}: {e}")
+            # Tenta se recuperar e seguir para o próximo
             driver.get(BASE_URL)
             time.sleep(3)
             try:
-                botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()=\"{uf}\"]')))
+                botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
                 botao_estado.click()
                 time.sleep(3)
             except:
@@ -141,9 +161,11 @@ def baixar_estado(uf: str):
             index += 1
             continue
 
-# Execute os estados desejados:
-baixar_estado("AL")
-baixar_estado("SE")
+# Liste aqui os estados desejados (siglas como aparecem no site: AL, SE, BA, PE, CE, …)
+ESTADOS = ["AL", "SE"]  # ajuste conforme necessário
+
+for uf in ESTADOS:
+    baixar_estado(uf)
 
 driver.quit()
 print("\nFinalizado.")
