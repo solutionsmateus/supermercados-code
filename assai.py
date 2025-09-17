@@ -72,7 +72,6 @@ wait = WebDriverWait(driver, 30)
 
 # === HELPERS =================================================================
 def encontrar_data():
-    # pega qualquer bloco de "validade"
     try:
         enc_data = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.XPATH, '//div[contains(@class,"ofertas-tab-validade")]'))
@@ -110,37 +109,56 @@ def select_contains_noaccent(select_el, target_text, timeout=10) -> bool:
             return True
     return False
 
-def screenshot_slide(download_dir: Path, jornal_num: int, page_num: int) -> bool:
-    """
-    Faz screenshot do <img> visível no slider de ofertas.
-    Retorna True se salvou, False caso contrário.
-    """
+def get_slide_img():
+    """Retorna o elemento <img> do slide atual e o src (ou (None, None) se não achar)."""
     try:
-        # tenta pegar a imagem do slide ativo
         img = wait.until(EC.visibility_of_element_located((
             By.XPATH,
-            # imagem principal dentro do slider; aceita .jpeg/.jpg/.png
             "//div[contains(@class,'ofertas-slider')]//img[contains(@src,'.jp') or contains(@src,'.png')]"
         )))
+        src = img.get_attribute("src") or ""
+        return img, src
+    except Exception:
+        return None, None
+
+def screenshot_slide(download_dir: Path, jornal_num: int, page_num: int) -> tuple[bool, str]:
+    """
+    Faz screenshot do <img> visível e retorna (ok, src_atual).
+    """
+    img, src = get_slide_img()
+    if not img:
+        print(f"  Nenhuma imagem visível no slider (j{jornal_num} p{page_num}).")
+        return False, ""
+    try:
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", img)
         time.sleep(0.2)
         filepath = download_dir / f"encarte_j{jornal_num}_p{page_num}.png"
         img.screenshot(str(filepath))
         print(f"  Screenshot salvo: {filepath}")
-        return True
+        return True, src
     except Exception as e:
-        print(f"  Falha ao capturar screenshot da página {page_num} do jornal {jornal_num}: {e}")
-        return False
+        print(f"  Falha ao capturar screenshot (j{jornal_num} p{page_num}): {e}")
+        return False, src
+
+def wait_slide_change(prev_src: str, timeout: float = 6.0) -> bool:
+    """
+    Aguarda o src do slide mudar (até timeout). Retorna True se mudou.
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        _, curr = get_slide_img()
+        if curr and curr != prev_src:
+            return True
+        time.sleep(0.2)
+    return False
 
 def clicar_jornal(i: int) -> bool:
-    """
-    Tenta clicar no botão da aba do Jornal i usando seletores alternativos.
-    """
+    """Tenta clicar no botão da aba do Jornal i usando seletores alternativos."""
     candidatos = [
         f"//button[contains(., 'Jornal de Ofertas {i}')]",
         f"//button[contains(., 'Jornal {i}')]",
         f"//button[contains(., '{i}') and contains(., 'Jornal')]",
-        f"(//button[contains(., 'Jornal')])[{i}]"  # fallback por posição
+        f"(//button[contains(., 'Jornal')])[{i}]"
     ]
     for xp in candidatos:
         try:
@@ -151,29 +169,45 @@ def clicar_jornal(i: int) -> bool:
             continue
     return False
 
-def baixar_encartes(jornal_num, download_dir):
+def baixar_encartes(jornal_num: int, download_dir: Path):
+    MAX_PAGES = 20  # hard cap para evitar loop infinito
     page_num = 1
+    seen_srcs = set()
     download_dir.mkdir(parents=True, exist_ok=True)
 
-    while True:
+    while page_num <= MAX_PAGES:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
-        # Em vez de baixar via requests (403), fazemos screenshot do slide visível
-        ok = screenshot_slide(download_dir, jornal_num, page_num)
+        ok, src = screenshot_slide(download_dir, jornal_num, page_num)
         if not ok and page_num == 1:
-            # nada visível: não há jornal/próxima página
+            # Não há imagem/slider ativo — nada para baixar neste jornal
             break
 
-        # próxima página do slider
+        if src:
+            if src in seen_srcs:
+                print("  Slide repetido detectado — encerrando este jornal.")
+                break
+            seen_srcs.add(src)
+
+        # Tentar ir para a próxima página
         try:
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
+            # Alguns carrosseis não desabilitam o botão; checamos mudança de slide
+            prev_src = src
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", next_button)
-            time.sleep(0.3)
+            time.sleep(0.2)
             if not click_robusto(driver, next_button):
+                print("  Botão 'próximo' não clicável — encerrando jornal.")
                 break
-            time.sleep(1.2)
+
+            # Espera slide mudar; se não mudar, encerra
+            if not wait_slide_change(prev_src, timeout=6.0):
+                print("  Slide não mudou após 'próximo' — encerrando jornal.")
+                break
+
+            time.sleep(0.6)
             page_num += 1
         except Exception:
-            # sem botão next ou acabou páginas
+            print("  Não foi possível avançar o slider — encerrando jornal.")
             break
 
 # === MAIN ====================================================================
@@ -193,15 +227,16 @@ try:
     for estado, loja in LOJAS_ESTADOS.items():
         print(f" Processando: {estado} - {loja}")
 
-        # Estado: tenta exato e cai para "contém" sem acentos
+        # Estado
         estado_select = aguardar_elemento("select.estado")
         try:
             Select(estado_select).select_by_visible_text(estado)
         except:
             ok = select_contains_noaccent(estado_select, estado)
             if not ok:
-                raise RuntimeError(f"Estado '{estado}' não encontrado")
-        time.sleep(0.8)
+                print(f"  Estado '{estado}' não encontrado — pulando.")
+                continue
+        time.sleep(0.6)
 
         # Região (quando existir)
         if estado in REGIAO_POR_ESTADO:
@@ -211,28 +246,42 @@ try:
                 if not ok:
                     print(f"  Aviso: região '{REGIAO_POR_ESTADO[estado]}' não encontrada para {estado}")
                 aguardar_elemento("select.loja option[value]", timeout=20)
-                time.sleep(0.4)
+                time.sleep(0.3)
             except Exception as e:
-                print(f" Não foi possível selecionar a região para {estado}: {e}")
+                print(f"  Não foi possível selecionar a região para {estado}: {e}")
 
-        # Loja (tenta exato e cai para contém/sem acento)
+        # Loja
         loja_select = aguardar_elemento("select.loja", timeout=20)
         try:
             Select(loja_select).select_by_visible_text(loja)
         except:
             ok = select_contains_noaccent(loja_select, loja)
             if not ok:
-                raise RuntimeError(f"Não encontrei a loja '{loja}' no estado {estado}")
+                print(f"  Loja '{loja}' não encontrada em {estado} — pulando.")
+                continue
 
-        time.sleep(0.6)
+        time.sleep(0.5)
 
         # Confirmar
-        clicar_elemento("button.confirmar")
-        time.sleep(1)
+        try:
+            clicar_elemento("button.confirmar")
+        except Exception as e:
+            print(f"  Não consegui confirmar a loja ({loja}) — pulando estado. Erro: {e}")
+            continue
 
-        aguardar_elemento("div.ofertas-slider", timeout=30)
+        # Aguarda slider; se não vier, pula
+        try:
+            aguardar_elemento("div.ofertas-slider", timeout=30)
+        except Exception:
+            print("  Slider de ofertas não apareceu — pulando estado.")
+            # Volta para selecionar outra loja/estado
+            try:
+                clicar_elemento("a.seletor-loja")
+            except:
+                pass
+            continue
+
         data_nome = encontrar_data()
-
         nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
         pasta_loja_data = OUTPUT_DIR / f"assai_{nome_loja}_{data_nome}"
         pasta_loja_data.mkdir(parents=True, exist_ok=True)
@@ -241,27 +290,33 @@ try:
         scroll_down_and_up()
         baixar_encartes(1, pasta_loja_data)
 
-        # Tenta alternar para os demais jornais, mas só se o botão existir
+        # Demais jornais (2 e 3)
         for i in range(2, 4):
             try:
                 if clicar_jornal(i):
-                    time.sleep(2)
-                    aguardar_elemento("div.ofertas-slider", timeout=30)
-                    scroll_down_and_up()
-                    baixar_encartes(i, pasta_loja_data)
+                    time.sleep(1.2)
+                    try:
+                        aguardar_elemento("div.ofertas-slider", timeout=20)
+                        scroll_down_and_up()
+                        baixar_encartes(i, pasta_loja_data)
+                    except Exception:
+                        print(f"  Slider não carregou no Jornal {i}.")
                 else:
-                    print(f" Jornal {i} não encontrado para {loja}.")
+                    print(f"  Jornal {i} não encontrado para {loja}.")
             except Exception as e:
-                print(f" Jornal {i} indisponível para {loja}: {str(e)}")
+                print(f"  Jornal {i} indisponível para {loja}: {e}")
 
         # Volta ao seletor para próximo estado
-        clicar_elemento("a.seletor-loja")
-        time.sleep(1.2)
+        try:
+            clicar_elemento("a.seletor-loja")
+        except:
+            pass
+        time.sleep(0.8)
 
     print("Todos os encartes foram processados!")
 
 except Exception as e:
-    print(f"Erro crítico: {str(e)}")
+    print(f"Erro crítico: {e}")
     try:
         (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
         driver.save_screenshot(str((OUTPUT_DIR / "debug" / "erro_encartes.png").resolve()))
