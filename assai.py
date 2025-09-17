@@ -8,7 +8,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, UnexpectedAlertPresentException
 
 # --- Configuração de Saída ---
 OUTPUT_DIR = Path(os.environ.get("GITHUB_WORKSPACE", "Encartes_Assai")).resolve()
@@ -172,7 +172,11 @@ def build_headless_chrome():
     options.add_argument("--disable-gpu")
     options.add_argument("--lang=pt-BR")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    return webdriver.Chrome(options=options)
+    # Adiciona o caminho do chromedriver explicitamente
+    # No ambiente do GitHub Actions, o chromedriver é instalado em /usr/bin/chromium-chromedriver
+    # ou /usr/lib/chromium-browser/chromedriver
+    service = webdriver.ChromeService(executable_path="/usr/bin/chromium-chromedriver")
+    return webdriver.Chrome(options=options, service=service)
 
 # --- Execução Principal ---
 driver = None
@@ -183,36 +187,38 @@ try:
     print("[INFO] Acessando a página de ofertas...")
     driver.get(BASE_URL)
 
-    # Tenta fechar o pop-up de cookies, se aparecer
+    # --- Lidar com o modal de seleção de loja primeiro ---
     try:
-        # Tenta o seletor que funcionou na navegação manual
-        botao_aceitar_todos = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Aceitar Todos')]")))
-        click_robusto(driver, botao_aceitar_todos)
-        print("[INFO] Pop-up de cookies fechado (Aceitar Todos). ")
-    except TimeoutException:
-        try:
-            # Tenta o ID, caso o texto mude ou seja outro botão
-            botao_fechar_cookies = wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
-            click_robusto(driver, botao_fechar_cookies)
-            print("[INFO] Pop-up de cookies fechado (ID). ")
-        except Exception:
-            print("[INFO] Pop-up de cookies não encontrado ou não clicável.")
+        # Espera o modal de seleção de loja aparecer
+        wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja")))
+        print("[INFO] Modal de seleção de loja aberto.")
 
+        # Clica no seletor de loja para abrir o modal (se ainda não estiver aberto ou para reabrir)
+        # wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja"))).click()
+        # time.sleep(1.5) # Pequena pausa para o modal abrir completamente e elementos carregarem
+
+    except TimeoutException:
+        print("[INFO] Modal de seleção de loja não apareceu automaticamente.")
+        # Se o modal não apareceu, tenta clicar no seletor de loja
+        try:
+            wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja"))).click()
+            time.sleep(1.5)
+            print("[INFO] Modal de seleção de loja aberto via clique.")
+        except Exception as e:
+            print(f"[AVISO] Não foi possível abrir o modal de seleção de loja: {e}")
+
+    # --- Processar lojas ---
     for estado, loja_alvo in LOJAS_ESTADOS.items():
         print(f"\n--- Processando Estado: {estado}, Loja: {loja_alvo} ---")
         
         try:
-            # Clica no seletor de loja para abrir o modal
-            wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja"))).click()
-            time.sleep(1.5) # Pequena pausa para o modal abrir completamente e elementos carregarem
-
             # Seleciona o Estado
             select_estado_el = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "select.estado")))
             if not select_contains_noaccent(select_estado_el, estado, wait_time=15): # Aumenta espera para o select
                 print(f"  [ERRO] Estado \'{estado}\' não encontrado. Pulando.")
-                # Tenta fechar o modal antes de continuar para o próximo estado
+                # Tenta fechar o modal de seleção de loja antes de continuar para o próximo estado
                 try:
-                    driver.find_element(By.CSS_SELECTOR, "button[title=\'Close\']").click()
+                    driver.find_element(By.CSS_SELECTOR, "button[title='Close']").click()
                 except NoSuchElementException:
                     pass
                 continue
@@ -234,9 +240,9 @@ try:
             select_loja_el = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "select.loja")))
             if not select_contains_noaccent(select_loja_el, loja_alvo, wait_time=15):
                 print(f"  [ERRO] Loja \'{loja_alvo}\' não encontrada. Pulando.")
-                # Tenta fechar o modal antes de continuar para o próximo estado
+                # Tenta fechar o modal de seleção de loja antes de continuar para o próximo estado
                 try:
-                    driver.find_element(By.CSS_SELECTOR, "button[title=\'Close\']").click()
+                    driver.find_element(By.CSS_SELECTOR, "button[title='Close']").click()
                 except NoSuchElementException:
                     pass
                 continue
@@ -244,6 +250,21 @@ try:
             # Confirma a seleção
             wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.confirmar"))).click()
             print(f"  [INFO] Loja \'{loja_alvo}\' selecionada.")
+
+            # --- Lidar com o pop-up de cookies APÓS a seleção da loja ---
+            try:
+                # Tenta o seletor que funcionou na navegação manual
+                botao_aceitar_todos = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Aceitar Todos')]")))
+                click_robusto(driver, botao_aceitar_todos)
+                print("[INFO] Pop-up de cookies fechado (Aceitar Todos). ")
+            except TimeoutException:
+                try:
+                    # Tenta o ID, caso o texto mude ou seja outro botão
+                    botao_fechar_cookies = wait.until(EC.element_to_be_clickable((By.ID, "onetrust-accept-btn-handler")))
+                    click_robusto(driver, botao_fechar_cookies)
+                    print("[INFO] Pop-up de cookies fechado (ID). ")
+                except Exception:
+                    print("[INFO] Pop-up de cookies não encontrado ou não clicável.")
 
             # Aguarda o carregamento das ofertas e baixa os encartes
             wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.ofertas-slider")))
@@ -281,7 +302,7 @@ try:
             print(f"  [DEBUG] Screenshot de erro salvo em: {screenshot_path}")
             # Tenta fechar o modal de seleção de loja se ele estiver aberto
             try:
-                driver.find_element(By.CSS_SELECTOR, "button[title=\'Close\']").click()
+                driver.find_element(By.CSS_SELECTOR, "button[title='Close']").click()
             except NoSuchElementException:
                 pass
 
@@ -289,3 +310,4 @@ finally:
     if driver:
         driver.quit()
     print("\n[INFO] Processo finalizado.")
+
