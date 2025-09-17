@@ -1,19 +1,3 @@
-
-1
-1
-
-
-
-
-
-
-
-
-Diferença
-Original
-Modificado
-
-assai_scraper.py
 import os
 import time
 import re
