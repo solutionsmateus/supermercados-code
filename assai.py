@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-# assai.py — Headless + OUTPUT_DIR + URLs relativas normalizadas (todas as lojas)
-# Autor: você + ajustes ChatGPT
+# assai.py — Headless + OUTPUT_DIR + URLs relativas normalizadas + tratamento de alertas
 # Uso: python assai.py
 
 import os
@@ -20,6 +19,8 @@ from selenium.common.exceptions import (
     TimeoutException,
     NoSuchElementException,
     StaleElementReferenceException,
+    UnexpectedAlertPresentException,
+    NoAlertPresentException,
 )
 
 # ==========================================
@@ -127,21 +128,17 @@ def get_base_context(driver):
     page_url = driver.current_url.split("#")[0]
     p = urlparse(page_url)
     origin = f"{p.scheme}://{p.netloc}"
-    # Em alguns casos, a página pode ser rota sem trailing slash: urljoin lida com isso,
-    # mas manteremos a forma simples.
     return page_url, origin
 
 def normalize_url(u: str, base_page_url: str, base_origin: str) -> str:
     u = (u or "").strip()
     if not u:
         return ""
-    # //cdn... -> mantém mesmo esquema da page
-    if u.startswith("//"):
+    if u.startswith("//"):  # //cdn...
         return f"{urlparse(base_page_url).scheme}:{u}"
-    # /path -> junta com a origem
-    if u.startswith("/"):
+    if u.startswith("/"):   # /path
         return urljoin(base_origin, u)
-    # ./arquivo.jpg ou "arquivo.jpg" -> com base na página atual
+    # ./arquivo.jpg ou "arquivo.jpg" ou já absoluta (http/https)
     return urljoin(base_page_url if base_page_url.endswith("/") else base_page_url + "/", u)
 
 def get_current_slide_image_url(driver, wait, base_page_url, base_origin) -> str:
@@ -235,6 +232,25 @@ def baixar_encartes_do_jornal(driver, wait, jornal_num: int, download_dir: Path,
             break
 
 # ==========================================
+# Alertas (ex.: "Selecione uma loja")
+# ==========================================
+def close_alert_if_present(driver, timeout=3) -> bool:
+    """Fecha alert JS síncrono se estiver aberto (ex.: 'Selecione uma loja')."""
+    try:
+        WebDriverWait(driver, timeout).until(EC.alert_is_present())
+        al = driver.switch_to.alert
+        txt = al.text
+        try:
+            al.accept()
+        except Exception:
+            al.dismiss()
+        print(f"[INFO] Alerta fechado automaticamente: {txt}")
+        time.sleep(0.3)
+        return True
+    except (TimeoutException, NoAlertPresentException):
+        return False
+
+# ==========================================
 # WebDriver (Headless estável p/ CI)
 # ==========================================
 def build_headless_chrome():
@@ -250,6 +266,9 @@ def build_headless_chrome():
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     )
+    # Auto-aceita prompts inesperados
+    options.set_capability("unhandledPromptBehavior", "accept")
+
     # Deixe o Selenium Manager resolver o driver (não fixe paths)
     return webdriver.Chrome(options=options)
 
@@ -263,21 +282,39 @@ def main():
     try:
         print("[INFO] Acessando a página de ofertas...")
         driver.get(REFERER_BASE)
+        close_alert_if_present(driver, timeout=3)
 
-        # Abre/garante modal de seleção de loja
+        # TENTATIVA 1: esperar o modal abrir sozinho
         try:
-            # às vezes abre sozinho
             wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja")))
             print("[INFO] Modal de seleção de loja detectado.")
+        except UnexpectedAlertPresentException:
+            print("[AVISO] Alerta inesperado durante espera do modal. Fechando...")
+            close_alert_if_present(driver, timeout=2)
         except TimeoutException:
-            print("[INFO] Modal não abriu sozinho; tentando abrir pelo seletor.")
+            print("[INFO] Modal não abriu sozinho; vou abrir via seletor.")
+
+        # Se o modal não estiver visível, abre pelo seletor
+        try:
+            modal_visivel = False
             try:
+                modal = driver.find_element(By.CSS_SELECTOR, "div.modal-loja")
+                modal_visivel = modal.is_displayed()
+            except Exception:
+                modal_visivel = False
+
+            if not modal_visivel:
                 btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja")))
                 click_robusto(driver, btn)
+                close_alert_if_present(driver, timeout=2)  # caso o clique gere o alerta
                 wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja")))
-                print("[INFO] Modal aberto.")
-            except Exception as e:
-                print(f"[AVISO] Não foi possível abrir o modal de seleção: {e}")
+                print("[INFO] Modal aberto via seletor.")
+        except UnexpectedAlertPresentException:
+            print("[AVISO] Alerta inesperado ao abrir modal via seletor. Fechando e re-tentando...")
+            close_alert_if_present(driver, timeout=2)
+            btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja")))
+            click_robusto(driver, btn)
+            wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja")))
 
         # Itera estados/lojas
         for estado, loja_alvo in LOJAS_ESTADOS.items():
@@ -316,9 +353,14 @@ def main():
                     continue
 
                 # Confirmar
-                btn_conf = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.confirmar")))
-                click_robusto(driver, btn_conf)
-                print(f"  [INFO] Loja selecionada.")
+                try:
+                    btn_conf = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.confirmar")))
+                    click_robusto(driver, btn_conf)
+                    close_alert_if_present(driver, timeout=2)  # caso a página reclame
+                    print(f"  [INFO] Loja selecionada.")
+                except UnexpectedAlertPresentException:
+                    print("[AVISO] Alerta ao confirmar a loja. Fechando alerta e continuando.")
+                    close_alert_if_present(driver, timeout=2)
 
                 # Cookies (onetrust) — tenta aceitar
                 try:
@@ -366,6 +408,10 @@ def main():
                     except TimeoutException:
                         print(f"  [INFO] Jornal {i} não disponível para esta loja.")
                         break
+                    except UnexpectedAlertPresentException:
+                        print(f"  [AVISO] Alerta durante troca para Jornal {i}. Fechando e seguindo.")
+                        close_alert_if_present(driver, timeout=2)
+                        break
                     except Exception as e:
                         print(f"  [INFO] Erro ao acessar Jornal {i}: {type(e).__name__}: {e}")
                         break
@@ -376,6 +422,7 @@ def main():
                         EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja"))
                     )
                     click_robusto(driver, btn_sel)
+                    close_alert_if_present(driver, timeout=2)
                     WebDriverWait(driver, 10).until(
                         EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja"))
                     )
@@ -386,6 +433,7 @@ def main():
                 print(f"  [ERRO] Falha ao processar '{estado} - {loja_alvo}': {type(e).__name__}: {e}")
                 # Salva debug
                 try:
+                    nome_loja_limpo = re.sub(r'[^a-zA-Z0-9_]+', '', loja_alvo.replace(" ", "_"))
                     shot = OUTPUT_DIR / f"erro_{estado}_{nome_loja_limpo}.png"
                     driver.save_screenshot(str(shot))
                     (OUTPUT_DIR / f"erro_{estado}_{nome_loja_limpo}.html").write_text(
@@ -400,6 +448,7 @@ def main():
                         EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seletor-loja"))
                     )
                     click_robusto(driver, btn_sel)
+                    close_alert_if_present(driver, timeout=2)
                     WebDriverWait(driver, 5).until(
                         EC.visibility_of_element_located((By.CSS_SELECTOR, "div.modal-loja"))
                     )
@@ -413,7 +462,7 @@ def main():
         except Exception:
             pass
         print("[INFO] Processo finalizado.")
-        
+
 
 if __name__ == "__main__":
     main()
