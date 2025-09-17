@@ -6,14 +6,20 @@ import unicodedata
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException, UnexpectedAlertPresentException
 
 # --- Configuração de Saída ---
-OUTPUT_DIR = Path(os.environ.get("GITHUB_WORKSPACE", "Encartes_Assai")).resolve()
+OUTPUT_DIR = Path(
+    os.environ.get("OUTPUT_DIR") 
+    or os.environ.get("GITHUB_WORKSPACE") 
+    or "Encartes_Assai"
+).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[INFO] Pasta de saída configurada para: {OUTPUT_DIR}")
+
 
 # --- Mapeamentos ---
 LOJAS_ESTADOS = {
@@ -164,19 +170,22 @@ def baixar_encartes_do_jornal(driver, wait, jornal_num: int, download_dir: Path)
 
 # --- Configuração do WebDriver ---
 def build_headless_chrome():
-    options = webdriver.ChromeOptions()
+    options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-gpu")
     options.add_argument("--lang=pt-BR")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    # Adiciona o caminho do chromedriver explicitamente
-    # No ambiente do GitHub Actions, o chromedriver é instalado em /usr/bin/chromium-chromedriver
-    # ou /usr/lib/chromium-browser/chromedriver
-    service = webdriver.ChromeService(executable_path="/usr/bin/chromium-chromedriver")
-    return webdriver.Chrome(options=options, service=service)
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+
+    # ⬇️ IMPORTANTE: NÃO fixe 'service' nem 'executable_path'.
+    # Deixe o Selenium Manager baixar/achar o driver certo no runner.
+    return webdriver.Chrome(options=options)
 
 # --- Execução Principal ---
 driver = None
