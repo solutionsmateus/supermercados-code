@@ -220,7 +220,7 @@ try:
     time.sleep(2)
 
     # Fecha eventual popup de cookies
-    try:
+try:
     clicar_elemento("button.ot-close-icon")
 except:
     pass
