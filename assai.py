@@ -221,73 +221,77 @@ try:
 
     # Fecha eventual popup de cookies
     try:
-        clicar_elemento("button.ot-close-icon")
-    except:
-        pass
+    clicar_elemento("button.ot-close-icon")
+except:
+    pass
 
-    clicar_elemento("a.seletor-loja")
+clicar_elemento("a.seletor-loja")
+time.sleep(1)
+
+for estado, loja in LOJAS_ESTADOS.items():
+    print(f" Processando: {estado} - {loja}")
+
+    estado_select = aguardar_elemento("select.estado")
+    Select(estado_select).select_by_visible_text(estado)
     time.sleep(1)
 
-    for estado, loja in LOJAS_ESTADOS.items():
-        print(f" Processando: {estado} - {loja}")
-
-        estado_select = aguardar_elemento("select.estado")
-        Select(estado_select).select_by_visible_text(estado)
-        time.sleep(1)
-
-        # Seletor de Região (quando existir)
-        if estado in REGIAO_POR_ESTADO:
-            try:
-                regiao_select_element = aguardar_elemento("select.regiao", timeout=15)
-                Select(regiao_select_element).select_by_visible_text(REGIAO_POR_ESTADO[estado])
-                aguardar_elemento("select.loja option[value]", timeout=20)
-                time.sleep(0.5)
-            except Exception as e:
-                print(f" Não foi possível selecionar a região para {estado}: {e}")
-
-        # Seleção da loja
-        loja_select = aguardar_elemento("select.loja", timeout=20)
+    # Seletor de Região (quando existir)
+    if estado in REGIAO_POR_ESTADO:
         try:
-            Select(loja_select).select_by_visible_text(loja)
-        except:
-            ok = select_by_visible_text_contains(loja_select, loja)
-            if not ok:
-                raise RuntimeError(f"Não encontrei a loja '{loja}' no estado {estado}")
+            regiao_select_element = aguardar_elemento("select.regiao", timeout=15)
+            Select(regiao_select_element).select_by_visible_text(REGIAO_POR_ESTADO[estado])
+            aguardar_elemento("select.loja option[value]", timeout=20)
+            time.sleep(0.5)
+        except Exception as e:
+            print(f" Não foi possível selecionar a região para {estado}: {e}")
 
-        time.sleep(0.8)
+    # Seleção da loja
+    loja_select = aguardar_elemento("select.loja", timeout=20)
+    try:
+        Select(loja_select).select_by_visible_text(loja)
+    except:
+        ok = select_by_visible_text_contains(loja_select, loja)
+        if not ok:
+            raise RuntimeError(f"Não encontrei a loja '{loja}' no estado {estado}")
 
-        clicar_elemento("button.confirmar")
-        time.sleep(1)
+    time.sleep(0.8)
 
-        aguardar_elemento("div.ofertas-slider", timeout=30)
-        data_nome = encontrar_data()
-        sess = make_session_from_driver(driver)
+    clicar_elemento("button.confirmar")
+    time.sleep(1)
 
+    aguardar_elemento("div.ofertas-slider", timeout=30)
+    data_nome = encontrar_data()
 
-        nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
-        pasta_loja_data = OUTPUT_DIR / f"assai_{nome_loja}_{data_nome}"
-        pasta_loja_data.mkdir(parents=True, exist_ok=True)
-        print(f"  Salvando em: {pasta_loja_data}")
+    # >>> cria a sessão APÓS carregar o slider (cookies corretos)
+    sess = make_session_from_driver(driver)
 
-        scroll_down_and_up()
-        baixar_encartes(i, pasta_loja_data, session=sess)
+    nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
+    pasta_loja_data = OUTPUT_DIR / f"assai_{nome_loja}_{data_nome}"
+    pasta_loja_data.mkdir(parents=True, exist_ok=True)
+    print(f"  Salvando em: {pasta_loja_data}")
 
-        # Tenta "Jornal de Ofertas 2..3"
-        for i in range(2, 4):
-            try:
-                clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(3)
-                aguardar_elemento("div.ofertas-slider", timeout=30)
-                scroll_down_and_up()
-                baixar_encartes(i, pasta_loja_data)
-            except Exception as e:
-                print(f" Jornal {i} indisponível para {loja}: {str(e)}")
+    scroll_down_and_up()
 
-        # Volta ao seletor para próximo estado
-        clicar_elemento("a.seletor-loja")
-        time.sleep(2)
+    # Jornal 1 (era aqui que 'i' estava indefinido)
+    baixar_encartes(1, pasta_loja_data, session=sess)
 
-    print("Todos os encartes foram processados!")
+    # Tenta "Jornal de Ofertas 2..3"
+    for i in range(2, 4):
+        try:
+            clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
+            time.sleep(3)
+            aguardar_elemento("div.ofertas-slider", timeout=30)
+            scroll_down_and_up()
+            baixar_encartes(i, pasta_loja_data, session=sess)  # <-- passar session
+        except Exception as e:
+            print(f" Jornal {i} indisponível para {loja}: {str(e)}")
+
+    # Volta ao seletor para próximo estado
+    clicar_elemento("a.seletor-loja")
+    time.sleep(2)
+
+print("Todos os encartes foram processados!")
+
 
 except Exception as e:
     print(f"Erro crítico: {str(e)}")
