@@ -99,14 +99,14 @@ def download_with_session(session, url, dest, referer):
     if r.status_code == 403:
         # fallback 1: referer base
         img_headers["Referer"] = "https://www.assai.com.br/ofertas"
-        time.sleep(0.8)
+        time.sleep(3)
         r = session.get(url, headers=img_headers, timeout=40, stream=True)
 
     if r.status_code == 403:
         # fallback 2: aceita identity e relaxa Accept
         img_headers["Accept"] = "*/*"
         img_headers["Accept-Encoding"] = "identity"
-        time.sleep(0.8)
+        time.sleep(3)
         r = session.get(url, headers=img_headers, timeout=40, stream=True)
 
     if r.status_code >= 400:
@@ -160,14 +160,14 @@ def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=15):
 def clicar_elemento(seletor, by=By.CSS_SELECTOR):
     element = wait.until(EC.element_to_be_clickable((by, seletor)))
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-    time.sleep(0.5)
+    time.sleep(5)
     element.click()
 
 def scroll_down_and_up():
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
-    time.sleep(0.5)
+    time.sleep(5)
     driver.execute_script("window.scrollTo(0, 1);")
-    time.sleep(0.5)
+    time.sleep(5)
 
 def select_by_visible_text_contains(select_el, target_text, timeout=10):
     WebDriverWait(driver, timeout).until(
@@ -227,9 +227,9 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next"))
             )
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(0.5)
+            time.sleep(5)
             next_button.click()
-            time.sleep(2.0)  # dá tempo pro Slick trocar o slide
+            time.sleep(5)  # dá tempo pro Slick trocar o slide
             page_num += 1
         except Exception:
             break
@@ -238,7 +238,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
 
 try:
     driver.get(BASE_URL)
-    time.sleep(2)
+    time.sleep(5)
 
     # Fecha eventual popup de cookies
     try:
@@ -262,7 +262,7 @@ try:
                 regiao_select_element = aguardar_elemento("select.regiao", timeout=15)
                 Select(regiao_select_element).select_by_visible_text(REGIAO_POR_ESTADO[estado])
                 aguardar_elemento("select.loja option[value]", timeout=20)
-                time.sleep(0.5)
+                time.sleep(5)
             except Exception as e:
                 print(f" Não foi possível selecionar a região para {estado}: {e}")
 
@@ -275,10 +275,10 @@ try:
             if not ok:
                 raise RuntimeError(f"Não encontrei a loja '{loja}' no estado {estado}")
 
-        time.sleep(0.8)
+        time.sleep(5)
 
         clicar_elemento("button.confirmar")
-        time.sleep(1)
+        time.sleep(5)
 
         # Garante que o slider carregou e extrai texto de validade
         aguardar_elemento("div.ofertas-slider", timeout=30)
@@ -290,7 +290,7 @@ try:
             sess.get(driver.current_url, timeout=15)
         except Exception:
             pass
-        time.sleep(1.0)
+        time.sleep(5)
 
         # Pasta de saída por loja+data (sanitizada)
         nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
@@ -307,7 +307,7 @@ try:
         for i in range(2, 4):
             try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(3)
+                time.sleep(5)
                 aguardar_elemento("div.ofertas-slider", timeout=30)
                 scroll_down_and_up()
 
@@ -317,7 +317,7 @@ try:
                     sess.get(driver.current_url, timeout=15)
                 except Exception:
                     pass
-                time.sleep(0.5)
+                time.sleep(5)
 
                 baixar_encartes(i, pasta_loja_data, session=sess)
             except Exception as e:
@@ -325,7 +325,7 @@ try:
 
         # Volta ao seletor para próximo estado
         clicar_elemento("a.seletor-loja")
-        time.sleep(2)
+        time.sleep(5)
 
     print("Todos os encartes foram processados!")
 
