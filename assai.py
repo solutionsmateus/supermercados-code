@@ -1,8 +1,8 @@
 import os
 import time
 import re
+import random
 from pathlib import Path
-from datetime import datetime
 
 import requests
 from urllib3.util.retry import Retry
@@ -12,6 +12,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # ============================= Config/Geral =============================
 
@@ -49,10 +50,7 @@ def make_session_from_driver(driver, extra_headers=None):
     """Cria uma requests.Session reaproveitando cookies do Selenium."""
     s = requests.Session()
     retries = Retry(
-        total=4,
-        connect=3,
-        read=3,
-        backoff_factor=1.2,
+        total=4, connect=3, read=3, backoff_factor=1.2,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "OPTIONS"],
     )
@@ -78,11 +76,8 @@ def make_session_from_driver(driver, extra_headers=None):
         )
     return s
 
-def download_with_session(session, url, dest, referer):
-    """Baixa a URL usando a session (com cookies) e headers de navegador; trata 403."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    img_headers = {
+def _headers_img(referer):
+    return {
         "Referer": referer,
         "Origin": "https://www.assai.com.br",
         "Sec-Fetch-Site": "cross-site",
@@ -94,20 +89,42 @@ def download_with_session(session, url, dest, referer):
         "Pragma": "no-cache",
     }
 
-    r = session.get(url, headers=img_headers, timeout=40, stream=True)
+def wait_url_live(session, url, referer, timeout=12):
+    """Espera a URL responder 200 (GET leve) — útil quando o CDN 'demora a liberar'."""
+    end = time.time() + timeout
+    headers = _headers_img(referer)
+    while time.time() < end:
+        try:
+            r = session.get(url, headers=headers, timeout=8, stream=True)
+            code = r.status_code
+            r.close()
+            if code == 200:
+                return True
+            if code == 403:
+                headers["Referer"] = "https://www.assai.com.br/ofertas"
+        except Exception:
+            pass
+        time.sleep(0.5 + random.random()*0.6)
+    return False
+
+def download_with_session(session, url, dest, referer):
+    """Baixa a URL usando a session (com cookies) e headers de navegador; trata 403."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    headers = _headers_img(referer)
+
+    wait_url_live(session, url, referer, timeout=10)
+
+    r = session.get(url, headers=headers, timeout=40, stream=True)
+    if r.status_code == 403:
+        headers["Referer"] = "https://www.assai.com.br/ofertas"
+        time.sleep(0.6 + random.random()*0.4)
+        r = session.get(url, headers=headers, timeout=40, stream=True)
 
     if r.status_code == 403:
-        # fallback 1: referer base
-        img_headers["Referer"] = "https://www.assai.com.br/ofertas"
-        time.sleep(5)
-        r = session.get(url, headers=img_headers, timeout=40, stream=True)
-
-    if r.status_code == 403:
-        # fallback 2: aceita identity e relaxa Accept
-        img_headers["Accept"] = "*/*"
-        img_headers["Accept-Encoding"] = "identity"
-        time.sleep(5)
-        r = session.get(url, headers=img_headers, timeout=40, stream=True)
+        headers["Accept"] = "*/*"
+        headers["Accept-Encoding"] = "identity"
+        time.sleep(0.6 + random.random()*0.5)
+        r = session.get(url, headers=headers, timeout=40, stream=True)
 
     if r.status_code >= 400:
         raise RuntimeError(f"HTTP {r.status_code} baixando {url}")
@@ -130,17 +147,51 @@ def build_headless_chrome():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=pt-BR,pt")
     options.add_argument(f"--user-agent={DEFAULT_UA}")
+    # downloads automáticos (fallback via navegador, se necessário)
+    prefs = {
+        "download.default_directory": str(OUTPUT_DIR),
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,
+    }
+    options.add_experimental_option("prefs", prefs)
     return webdriver.Chrome(options=options)
 
 driver = build_headless_chrome()
-wait = WebDriverWait(driver, 30)
+wait = WebDriverWait(driver, 50)  # mais folga
+
+def set_download_dir(download_dir: Path):
+    download_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        driver.execute_cdp_cmd(
+            "Page.setDownloadBehavior",
+            {"behavior": "allow", "downloadPath": str(download_dir)}
+        )
+    except Exception:
+        try:
+            driver.execute_cdp_cmd(
+                "Browser.setDownloadBehavior",
+                {"behavior": "allow", "downloadPath": str(download_dir)}
+            )
+        except Exception:
+            pass
+
+def wait_new_file(dirpath: Path, before: set, timeout=45):
+    end = time.time() + timeout
+    while time.time() < end:
+        now = set(p for p in dirpath.glob("*") if p.is_file())
+        new = [p for p in now - before if not p.name.endswith(".crdownload")]
+        if new:
+            return sorted(new, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+        time.sleep(0.3)
+    return None
 
 # ============================== Helpers =================================
 
 def encontrar_data():
     """Extrai o texto de validade exibido no topo das ofertas."""
     try:
-        enc_data = WebDriverWait(driver, 10).until(
+        enc_data = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, '//div[contains(@class, "ofertas-tab-validade")]'))
         )
     except Exception:
@@ -152,7 +203,7 @@ def encontrar_data():
             return nome_pasta[:80]
     return "sem_data"
 
-def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=15):
+def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=25):
     return WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((by, seletor))
     )
@@ -160,16 +211,16 @@ def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=15):
 def clicar_elemento(seletor, by=By.CSS_SELECTOR):
     element = wait.until(EC.element_to_be_clickable((by, seletor)))
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-    time.sleep(5)
+    time.sleep(0.5)
     element.click()
 
 def scroll_down_and_up():
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
-    time.sleep(5)
+    time.sleep(0.5 + random.random()*0.5)
     driver.execute_script("window.scrollTo(0, 1);")
-    time.sleep(5)
+    time.sleep(0.5 + random.random()*0.5)
 
-def select_by_visible_text_contains(select_el, target_text, timeout=10):
+def select_by_visible_text_contains(select_el, target_text, timeout=15):
     WebDriverWait(driver, timeout).until(
         lambda d: len(select_el.find_elements(By.TAG_NAME, "option")) > 0
     )
@@ -182,63 +233,139 @@ def select_by_visible_text_contains(select_el, target_text, timeout=10):
             return True
     return False
 
+def ensure_slider_ready(timeout=30):
+    """Garante que o slider está visível e existem âncoras de download no DOM."""
+    cont = WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.ofertas-slider"))
+    )
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", cont)
+    time.sleep(0.8)
+    WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.ofertas-slider div.slick-slide.slick-active"))
+    )
+    WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.ofertas-slider a.download"))
+    )
+    return cont
+
+def _collect_active_download_hrefs():
+    """Coleta HREFs só do slide ativo (ou current) — tolera variações do Slick."""
+    els = driver.find_elements(By.CSS_SELECTOR,
+        "div.ofertas-slider div.slick-slide.slick-active a.download[href$='.jpeg']"
+    )
+    if not els:
+        els = driver.find_elements(By.CSS_SELECTOR,
+            "div.ofertas-slider div.slick-slide.slick-current a.download[href$='.jpeg']"
+        )
+    pairs = []
+    for a in els:
+        try:
+            href = a.get_attribute("href")
+            if href:
+                pairs.append((a, href))
+        except WebDriverException:
+            pass
+    return pairs
+
+def _wait_slide_changed(prev_hrefs, timeout=16):
+    """Espera o slide ativo mudar (hrefs diferentes dos anteriores)."""
+    end = time.time() + timeout
+    prevset = {h for _, h in prev_hrefs}
+    while time.time() < end:
+        cur = _collect_active_download_hrefs()
+        curset = {h for _, h in cur}
+        if curset and curset != prevset:
+            return cur
+        time.sleep(0.4 + random.random()*0.4)
+    return _collect_active_download_hrefs()
+
 def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Session):
-    """Percorre as páginas do slider e baixa as imagens .jpeg exibidas (apenas slide visível)."""
+    """Percorre as páginas do slider e baixa as imagens; robusto a timing.
+       Tenta via requests; em 403, fallback: baixa clicando no link com o navegador."""
+    try:
+        download_dir.mkdir(parents=True, exist_ok=True)
+        set_download_dir(download_dir)
+        ensure_slider_ready(timeout=40)
+    except Exception as e:
+        print(f"  [jornal {jornal_num}] slider não ficou pronto: {e}")
+        return
+
     page_num = 1
-    downloaded_urls = set()
-    download_dir.mkdir(parents=True, exist_ok=True)
+    downloaded = set()
+
+    # primeira coleta do slide ativo (com tolerância)
+    try:
+        current = _collect_active_download_hrefs()
+    except Exception as e:
+        print(f"  [jornal {jornal_num}] falha coletando links: {e}")
+        return
 
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
+        referer_url = driver.current_url
 
-        # Somente links do SLIDE ATIVO (evita clones/ocultos do Slick)
-        links_download = wait.until(
-            EC.presence_of_all_elements_located((
-                By.XPATH,
-                "(//div[contains(@class,'ofertas-slider')]"
-                "//div[contains(@class,'slick-slide') and contains(@class,'slick-active')])[1]"
-                "//a[contains(@class,'download') and contains(@href,'.jpeg')]"
-            ))
-        )
-
-        current_page_urls = []
-        for link in links_download:
-            url = link.get_attribute("href")
-            if url and url not in downloaded_urls:
-                current_page_urls.append(url)
-                downloaded_urls.add(url)
-
-        if not current_page_urls and page_num > 1:
-            break  # fim
-
-        referer_url = driver.current_url  # fundamental para CloudFront
-        for idx, url in enumerate(current_page_urls, start=1):
+        # Se ainda não há links, tenta reassegurar o slider
+        if not current:
             try:
-                filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{int(time.time())}.jpg"
-                file_path = download_dir / filename
+                ensure_slider_ready(timeout=20)
+                current = _collect_active_download_hrefs()
+            except Exception:
+                pass
+            if not current:
+                print(f"  [jornal {jornal_num}] sem links de download nesta página — encerrando.")
+                break
+
+        for idx, (a_el, url) in enumerate(current, start=1):
+            if url in downloaded:
+                continue
+            downloaded.add(url)
+
+            filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{int(time.time())}.jpg"
+            file_path = download_dir / filename
+            try:
+                if not wait_url_live(session, url, referer_url, timeout=10):
+                    time.sleep(0.6)
                 download_with_session(session, url, file_path, referer=referer_url)
-                print(f"  OK: {url} -> {file_path}")
-            except Exception as e:
-                print(f"  Falha no download: {url} ({e})")
+                print(f"  OK (requests): {url} -> {file_path}")
+            except Exception as e1:
+                # fallback: tentar baixar pelo navegador
+                try:
+                    before = set(p for p in download_dir.glob("*") if p.is_file())
+                    driver.execute_script("window.open(arguments[0].href, '_blank');", a_el)
+                    newf = wait_new_file(download_dir, before, timeout=50)
+                    if not newf:
+                        raise RuntimeError("timeout aguardando download via navegador")
+                    try:
+                        newf.replace(file_path)
+                    except Exception:
+                        data = newf.read_bytes()
+                        file_path.write_bytes(data)
+                        newf.unlink(missing_ok=True)
+                    print(f"  OK (browser): {url} -> {file_path}")
+                except Exception as e2:
+                    print(f"  Falha no download: {url} (requests: {e1}; browser: {e2})")
 
         # próxima página do slider
         try:
-            next_button = wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next"))
-            )
+            prev = current
+            next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(5)
+            time.sleep(0.4 + random.random()*0.3)
             next_button.click()
-            time.sleep(5)  # dá tempo pro Slick trocar o slide
+            current = _wait_slide_changed(prev, timeout=18)
+            if not current or {h for _, h in current} == {h for _, h in prev}:
+                break
             page_num += 1
-        except Exception:
+            time.sleep(0.9 + random.random()*0.5)  # tempo pro lazy-load
+        except Exception as e:
+            print(f"  [jornal {jornal_num}] não consegui avançar slide: {e}")
             break
 
 # ================================ Main ==================================
 
 try:
     driver.get(BASE_URL)
-    time.sleep(5)
+    time.sleep(2)
 
     # Fecha eventual popup de cookies
     try:
@@ -247,41 +374,42 @@ try:
         pass
 
     clicar_elemento("a.seletor-loja")
-    time.sleep(5)
+    time.sleep(1)
 
     for estado, loja in LOJAS_ESTADOS.items():
         print(f" Processando: {estado} - {loja}")
 
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
-        time.sleep(5)
+        time.sleep(1)
 
         # Seletor de Região (quando existir)
         if estado in REGIAO_POR_ESTADO:
             try:
-                regiao_select_element = aguardar_elemento("select.regiao", timeout=15)
+                regiao_select_element = aguardar_elemento("select.regiao", timeout=25)
                 Select(regiao_select_element).select_by_visible_text(REGIAO_POR_ESTADO[estado])
-                aguardar_elemento("select.loja option[value]", timeout=20)
-                time.sleep(5)
+                aguardar_elemento("select.loja option[value]", timeout=30)
+                time.sleep(0.6)
             except Exception as e:
                 print(f" Não foi possível selecionar a região para {estado}: {e}")
 
         # Seleção da loja
-        loja_select = aguardar_elemento("select.loja", timeout=20)
+        loja_select = aguardar_elemento("select.loja", timeout=30)
         try:
             Select(loja_select).select_by_visible_text(loja)
         except Exception:
             ok = select_by_visible_text_contains(loja_select, loja)
             if not ok:
-                raise RuntimeError(f"Não encontrei a loja '{loja}' no estado {estado}")
+                print(f"  Loja '{loja}' não encontrada em {estado} — pulando.")
+                continue
 
-        time.sleep(5)
+        time.sleep(0.9)
 
         clicar_elemento("button.confirmar")
-        time.sleep(5)
+        time.sleep(1.2)
 
         # Garante que o slider carregou e extrai texto de validade
-        aguardar_elemento("div.ofertas-slider", timeout=30)
+        aguardar_elemento("div.ofertas-slider", timeout=45)
         data_nome = encontrar_data()
 
         # Cria a sessão APÓS carregar o slider (cookies corretos) e aquece
@@ -290,7 +418,7 @@ try:
             sess.get(driver.current_url, timeout=15)
         except Exception:
             pass
-        time.sleep(5)
+        time.sleep(1.0)
 
         # Pasta de saída por loja+data (sanitizada)
         nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
@@ -307,8 +435,8 @@ try:
         for i in range(2, 4):
             try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(3)
-                aguardar_elemento("div.ofertas-slider", timeout=30)
+                time.sleep(1.2)
+                aguardar_elemento("div.ofertas-slider", timeout=45)
                 scroll_down_and_up()
 
                 # Re-sincroniza cookies da sessão a cada troca de jornal
@@ -317,7 +445,7 @@ try:
                     sess.get(driver.current_url, timeout=15)
                 except Exception:
                     pass
-                time.sleep(5)
+                time.sleep(0.7)
 
                 baixar_encartes(i, pasta_loja_data, session=sess)
             except Exception as e:
@@ -325,17 +453,18 @@ try:
 
         # Volta ao seletor para próximo estado
         clicar_elemento("a.seletor-loja")
-        time.sleep(2)
+        time.sleep(1.5)
 
     print("Todos os encartes foram processados!")
 
 except Exception as e:
     print(f"Erro crítico: {str(e)}")
     try:
-        # Mesmo em headless conseguimos salvar screenshot para debug
         (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
         driver.save_screenshot(str((OUTPUT_DIR / "debug" / "erro_encartes.png").resolve()))
-        print(f"Screenshot de erro salvo em: {(OUTPUT_DIR / 'debug' / 'erro_encartes.png').resolve()}")
+        with open(OUTPUT_DIR / "debug" / "page.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        print(f"Screenshot/HTML salvos em: {(OUTPUT_DIR / 'debug').resolve()}")
     except Exception:
         pass
 finally:
