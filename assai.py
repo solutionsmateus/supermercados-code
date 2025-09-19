@@ -112,6 +112,7 @@ def download_with_session(session, url, dest, referer):
     dest.parent.mkdir(parents=True, exist_ok=True)
     headers = _headers_img(referer)
 
+    # aguarda CDN “pronto”
     wait_url_live(session, url, referer, timeout=10)
 
     r = session.get(url, headers=headers, timeout=40, stream=True)
@@ -135,30 +136,86 @@ def download_with_session(session, url, dest, referer):
                 f.write(chunk)
     return dest
 
-# ============================= Selenium =================================
+# ====================== Chrome “stealth” (menos detectável) ==============
 
 def build_headless_chrome():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-features=VizDisplayCompositor")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--lang=pt-BR,pt")
-    options.add_argument(f"--user-agent={DEFAULT_UA}")
-    # downloads automáticos (fallback via navegador, se necessário)
-    prefs = {
-        "download.default_directory": str(OUTPUT_DIR),
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True,
-    }
-    options.add_experimental_option("prefs", prefs)
-    return webdriver.Chrome(options=options)
+    """
+    Tenta usar undetected-chromedriver (se instalado).
+    Caso contrário, usa Selenium Chrome com flags anti-bot e logs de console.
+    """
+    def _mk_options():
+        opts = webdriver.ChromeOptions()
+        # headless + estabilidade CI
+        opts.add_argument("--headless=new")
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1920,1080")
+        opts.add_argument("--lang=pt-BR,pt")
+        # reduzir fingerprint de automação e liberar 3rd-party cookies
+        opts.add_argument("--disable-blink-features=AutomationControlled")
+        opts.add_argument("--disable-features=BlockThirdPartyCookies,CookiesWithoutSameSiteMustBeSecure,SameSiteByDefaultCookies,PrivacySandboxAdsAPIs")
+        # UA real
+        opts.add_argument(f"--user-agent={DEFAULT_UA}")
+        # downloads automáticos (usados no fallback via navegador)
+        prefs = {
+            "download.default_directory": str(OUTPUT_DIR),
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+        }
+        opts.add_experimental_option("prefs", prefs)
+        # logs do console JS
+        opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
+        return opts
+
+    # 1) tenta undetected-chromedriver se disponível
+    try:
+        import undetected_chromedriver as uc
+        opts = _mk_options()
+        driver = uc.Chrome(options=opts)
+    except Exception:
+        # 2) fallback: Selenium Chrome padrão
+        opts = _mk_options()
+        driver = webdriver.Chrome(options=opts)
+
+    # Esconde webdriver + ajusta fingerprint básica
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+              Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+              Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR','pt','en-US','en']});
+              Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+              window.chrome = { runtime: {} };
+            """
+        })
+    except Exception:
+        pass
+
+    # Info do navegador pro log
+    try:
+        caps = driver.capabilities
+        print(f"[browser] {caps.get('browserName')} {caps.get('browserVersion')}")
+    except Exception:
+        pass
+
+    return driver
 
 driver = build_headless_chrome()
-wait = WebDriverWait(driver, 50)  # mais folga
+wait = WebDriverWait(driver, 50)
+
+def dump_console_logs(tag="log"):
+    """Salva console JS para debug."""
+    try:
+        logs = driver.get_log("browser")
+        (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
+        with open(OUTPUT_DIR / "debug" / f"console_{tag}.log", "w", encoding="utf-8") as f:
+            for e in logs:
+                f.write(f"[{e.get('level')}] {e.get('message')}\n")
+    except Exception:
+        pass
+
+# ======================= Suporte a download via navegador ================
 
 def set_download_dir(download_dir: Path):
     download_dir.mkdir(parents=True, exist_ok=True)
@@ -186,7 +243,7 @@ def wait_new_file(dirpath: Path, before: set, timeout=45):
         time.sleep(0.3)
     return None
 
-# ============================== Helpers =================================
+# ============================== Helpers DOM =============================
 
 def encontrar_data():
     """Extrai o texto de validade exibido no topo das ofertas."""
@@ -233,7 +290,7 @@ def select_by_visible_text_contains(select_el, target_text, timeout=15):
             return True
     return False
 
-def ensure_slider_ready(timeout=30):
+def ensure_slider_ready(timeout=40):
     """Garante que o slider está visível e existem âncoras de download no DOM."""
     cont = WebDriverWait(driver, timeout).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "div.ofertas-slider"))
@@ -267,7 +324,7 @@ def _collect_active_download_hrefs():
             pass
     return pairs
 
-def _wait_slide_changed(prev_hrefs, timeout=16):
+def _wait_slide_changed(prev_hrefs, timeout=18):
     """Espera o slide ativo mudar (hrefs diferentes dos anteriores)."""
     end = time.time() + timeout
     prevset = {h for _, h in prev_hrefs}
@@ -279,35 +336,44 @@ def _wait_slide_changed(prev_hrefs, timeout=16):
         time.sleep(0.4 + random.random()*0.4)
     return _collect_active_download_hrefs()
 
+# =========================== Baixa os encartes ===========================
+
 def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Session):
-    """Percorre as páginas do slider e baixa as imagens; robusto a timing.
-       Tenta via requests; em 403, fallback: baixa clicando no link com o navegador."""
+    """Percorre as páginas do slider e baixa as imagens;
+       tenta via requests; em 403, fallback: baixar pelo navegador."""
     try:
         download_dir.mkdir(parents=True, exist_ok=True)
         set_download_dir(download_dir)
-        ensure_slider_ready(timeout=40)
+        ensure_slider_ready(timeout=45)
     except Exception as e:
         print(f"  [jornal {jornal_num}] slider não ficou pronto: {e}")
+        dump_console_logs(f"slider_fail_j{jornal_num}")
+        # salva HTML pra inspeção
+        try:
+            (OUTPUT_DIR/"debug").mkdir(parents=True, exist_ok=True)
+            with open(OUTPUT_DIR/"debug"/f"page_j{jornal_num}.html","w",encoding="utf-8") as f:
+                f.write(driver.page_source)
+        except Exception:
+            pass
         return
 
     page_num = 1
     downloaded = set()
 
-    # primeira coleta do slide ativo (com tolerância)
     try:
         current = _collect_active_download_hrefs()
     except Exception as e:
         print(f"  [jornal {jornal_num}] falha coletando links: {e}")
+        dump_console_logs(f"collect_fail_j{jornal_num}")
         return
 
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
         referer_url = driver.current_url
 
-        # Se ainda não há links, tenta reassegurar o slider
         if not current:
             try:
-                ensure_slider_ready(timeout=20)
+                ensure_slider_ready(timeout=25)
                 current = _collect_active_download_hrefs()
             except Exception:
                 pass
@@ -409,7 +475,18 @@ try:
         time.sleep(1.2)
 
         # Garante que o slider carregou e extrai texto de validade
-        aguardar_elemento("div.ofertas-slider", timeout=45)
+        try:
+            aguardar_elemento("div.ofertas-slider", timeout=45)
+        except Exception as e:
+            print(f"[startup] slider não apareceu: {e}")
+            (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
+            driver.save_screenshot(str((OUTPUT_DIR / "debug" / "site_indisponivel.png").resolve()))
+            with open(OUTPUT_DIR / "debug" / "site_indisponivel.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            dump_console_logs("site_indisponivel")
+            # passa para próxima loja
+            continue
+
         data_nome = encontrar_data()
 
         # Cria a sessão APÓS carregar o slider (cookies corretos) e aquece
@@ -464,7 +541,8 @@ except Exception as e:
         driver.save_screenshot(str((OUTPUT_DIR / "debug" / "erro_encartes.png").resolve()))
         with open(OUTPUT_DIR / "debug" / "page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        print(f"Screenshot/HTML salvos em: {(OUTPUT_DIR / 'debug').resolve()}")
+        dump_console_logs("erro_critico")
+        print(f"Artefatos de debug salvos em: {(OUTPUT_DIR / 'debug').resolve()}")
     except Exception:
         pass
 finally:
