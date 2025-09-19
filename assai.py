@@ -99,14 +99,14 @@ def download_with_session(session, url, dest, referer):
     if r.status_code == 403:
         # fallback 1: referer base
         img_headers["Referer"] = "https://www.assai.com.br/ofertas"
-        time.sleep(3)
+        time.sleep(5)
         r = session.get(url, headers=img_headers, timeout=40, stream=True)
 
     if r.status_code == 403:
         # fallback 2: aceita identity e relaxa Accept
         img_headers["Accept"] = "*/*"
         img_headers["Accept-Encoding"] = "identity"
-        time.sleep(3)
+        time.sleep(5)
         r = session.get(url, headers=img_headers, timeout=40, stream=True)
 
     if r.status_code >= 400:
@@ -247,14 +247,14 @@ try:
         pass
 
     clicar_elemento("a.seletor-loja")
-    time.sleep(1)
+    time.sleep(5)
 
     for estado, loja in LOJAS_ESTADOS.items():
         print(f" Processando: {estado} - {loja}")
 
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
-        time.sleep(1)
+        time.sleep(5)
 
         # Seletor de Região (quando existir)
         if estado in REGIAO_POR_ESTADO:
@@ -307,7 +307,7 @@ try:
         for i in range(2, 4):
             try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(5)
+                time.sleep(3)
                 aguardar_elemento("div.ofertas-slider", timeout=30)
                 scroll_down_and_up()
 
@@ -325,7 +325,7 @@ try:
 
         # Volta ao seletor para próximo estado
         clicar_elemento("a.seletor-loja")
-        time.sleep(5)
+        time.sleep(2)
 
     print("Todos os encartes foram processados!")
 
