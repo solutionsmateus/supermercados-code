@@ -79,18 +79,35 @@ def make_session_from_driver(driver, extra_headers=None):
     return s
 
 def download_with_session(session, url, dest, referer):
-    """Baixa a URL usando a session (com cookies) e Referer, tratando 403."""
+    """Baixa a URL usando a session (com cookies) e headers de navegador; trata 403."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    headers = {"Referer": referer}
 
-    r = session.get(url, headers=headers, timeout=40, stream=True)
+    img_headers = {
+        "Referer": referer,
+        "Origin": "https://www.assai.com.br",
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Dest": "image",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+    r = session.get(url, headers=img_headers, timeout=40, stream=True)
+
     if r.status_code == 403:
-        # Tenta header alternativo
-        alt_headers = dict(headers)
-        alt_headers["Accept"] = "*/*"
-        alt_headers["Accept-Encoding"] = "identity"
-        time.sleep(1.0)
-        r = session.get(url, headers=alt_headers, timeout=40, stream=True)
+        # fallback 1: referer base
+        img_headers["Referer"] = "https://www.assai.com.br/ofertas"
+        time.sleep(0.8)
+        r = session.get(url, headers=img_headers, timeout=40, stream=True)
+
+    if r.status_code == 403:
+        # fallback 2: aceita identity e relaxa Accept
+        img_headers["Accept"] = "*/*"
+        img_headers["Accept-Encoding"] = "identity"
+        time.sleep(0.8)
+        r = session.get(url, headers=img_headers, timeout=40, stream=True)
 
     if r.status_code >= 400:
         raise RuntimeError(f"HTTP {r.status_code} baixando {url}")
@@ -166,17 +183,22 @@ def select_by_visible_text_contains(select_el, target_text, timeout=10):
     return False
 
 def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Session):
-    """Percorre as páginas do slider e baixa as imagens .jpeg exibidas."""
+    """Percorre as páginas do slider e baixa as imagens .jpeg exibidas (apenas slide visível)."""
     page_num = 1
     downloaded_urls = set()
     download_dir.mkdir(parents=True, exist_ok=True)
 
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
+
+        # Somente links do SLIDE ATIVO (evita clones/ocultos do Slick)
         links_download = wait.until(
-            EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@class, 'download') and contains(@href, '.jpeg')]")
-            )
+            EC.presence_of_all_elements_located((
+                By.XPATH,
+                "(//div[contains(@class,'ofertas-slider')]"
+                "//div[contains(@class,'slick-slide') and contains(@class,'slick-active')])[1]"
+                "//a[contains(@class,'download') and contains(@href,'.jpeg')]"
+            ))
         )
 
         current_page_urls = []
@@ -187,7 +209,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
                 downloaded_urls.add(url)
 
         if not current_page_urls and page_num > 1:
-            break
+            break  # fim
 
         referer_url = driver.current_url  # fundamental para CloudFront
         for idx, url in enumerate(current_page_urls, start=1):
@@ -195,7 +217,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
                 filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{int(time.time())}.jpg"
                 file_path = download_dir / filename
                 download_with_session(session, url, file_path, referer=referer_url)
-                print(f"  Encarte salvo: {file_path}")
+                print(f"  OK: {url} -> {file_path}")
             except Exception as e:
                 print(f"  Falha no download: {url} ({e})")
 
@@ -207,7 +229,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
             time.sleep(0.5)
             next_button.click()
-            time.sleep(2)
+            time.sleep(2.0)  # dá tempo pro Slick trocar o slide
             page_num += 1
         except Exception:
             break
@@ -262,8 +284,13 @@ try:
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
 
-        # Cria a sessão APÓS carregar o slider (cookies corretos)
+        # Cria a sessão APÓS carregar o slider (cookies corretos) e aquece
         sess = make_session_from_driver(driver)
+        try:
+            sess.get(driver.current_url, timeout=15)
+        except Exception:
+            pass
+        time.sleep(1.0)
 
         # Pasta de saída por loja+data (sanitizada)
         nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
@@ -283,6 +310,15 @@ try:
                 time.sleep(3)
                 aguardar_elemento("div.ofertas-slider", timeout=30)
                 scroll_down_and_up()
+
+                # Re-sincroniza cookies da sessão a cada troca de jornal
+                sess = make_session_from_driver(driver)
+                try:
+                    sess.get(driver.current_url, timeout=15)
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
                 baixar_encartes(i, pasta_loja_data, session=sess)
             except Exception as e:
                 print(f" Jornal {i} indisponível para {loja}: {str(e)}")
