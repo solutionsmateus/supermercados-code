@@ -8,6 +8,74 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import re
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
+
+DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+
+def make_session_from_driver(driver, extra_headers=None):
+    """Cria uma requests.Session reaproveitando cookies do Selenium."""
+    s = requests.Session()
+    retries = Retry(
+        total=4,
+        connect=3,
+        read=3,
+        backoff_factor=1.2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"]
+    )
+    s.mount("https://", HTTPAdapter(max_retries=retries))
+    s.mount("http://", HTTPAdapter(max_retries=retries))
+
+    # UA + Accepts "de navegador"
+    s.headers.update({
+        "User-Agent": DEFAULT_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+    })
+    if extra_headers:
+        s.headers.update(extra_headers)
+
+    # Copia cookies do Selenium
+    for c in driver.get_cookies():
+        # requests espera domain sem o ponto inicial
+        domain = c.get("domain", "").lstrip(".")
+        s.cookies.set(
+            name=c["name"],
+            value=c["value"],
+            domain=domain or None,
+            path=c.get("path", "/")
+        )
+    return s
+
+def download_with_session(session, url, dest, referer):
+    """Baixa a URL usando a session (com cookies) e Referer, tratando 403."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    headers = {"Referer": referer}
+
+    r = session.get(url, headers=headers, timeout=40, stream=True)
+    if r.status_code == 403:
+        # tenta header mais simples/sem compressão
+        alt_headers = dict(headers)
+        alt_headers["Accept"] = "*/*"
+        alt_headers["Accept-Encoding"] = "identity"
+        time.sleep(1.0)
+        r = session.get(url, headers=alt_headers, timeout=40, stream=True)
+
+    if r.status_code >= 400:
+        raise RuntimeError(f"HTTP {r.status_code} baixando {url}")
+
+    with open(dest, "wb") as f:
+        for chunk in r.iter_content(128 * 1024):
+            if chunk:
+                f.write(chunk)
+    return dest
+
 
 # === SAÍDA PADRONIZADA (ARTIFACT) ============================================
 # Lê a pasta de saída do ambiente (GitHub Actions define OUTPUT_DIR).
@@ -59,6 +127,8 @@ def build_headless_chrome():
 driver = build_headless_chrome()
 wait = WebDriverWait(driver, 30)
 
+
+
 # === HELPERS =================================================================
 def encontrar_data():
     try:
@@ -90,7 +160,7 @@ def scroll_down_and_up():
     driver.execute_script("window.scrollTo(0, 1);")
     time.sleep(0.5)
 
-def baixar_encartes(jornal_num: int, download_dir: Path):
+def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Session):
     page_num = 1
     downloaded_urls = set()
     download_dir.mkdir(parents=True, exist_ok=True)
@@ -112,18 +182,14 @@ def baixar_encartes(jornal_num: int, download_dir: Path):
         if not current_page_urls and page_num > 1:
             break
 
+        referer_url = driver.current_url  # fundamental para CloudFront
         for idx, url in enumerate(current_page_urls, start=1):
             try:
-                response = requests.get(url, timeout=30)
-                if response.status_code == 200:
-                    file_path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{int(time.time())}.jpg"
-                    with open(file_path, "wb") as f:
-                        f.write(response.content)
-                    print(f"  Encarte salvo: {file_path}")
-                else:
-                    print(f"  Falha no download: {url} (HTTP {response.status_code})")
+                file_path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{int(time.time())}.jpg"
+                download_with_session(session, url, file_path, referer=referer_url)
+                print(f"  Encarte salvo: {file_path}")
             except Exception as e:
-                print(f"  Erro ao baixar {url}: {e}")
+                print(f"  Falha no download: {url} ({e})")
 
         # próxima página do slider
         try:
@@ -135,6 +201,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path):
             page_num += 1
         except:
             break
+
 
 def select_by_visible_text_contains(select_el, target_text, timeout=10):
     WebDriverWait(driver, timeout).until(lambda d: len(select_el.find_elements(By.TAG_NAME, "option")) > 0)
@@ -194,6 +261,8 @@ try:
 
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
+        sess = make_session_from_driver(driver)
+
 
         nome_loja = re.sub(r'[\\/*?:"<>|\s]+', '_', loja)
         pasta_loja_data = OUTPUT_DIR / f"assai_{nome_loja}_{data_nome}"
@@ -201,7 +270,7 @@ try:
         print(f"  Salvando em: {pasta_loja_data}")
 
         scroll_down_and_up()
-        baixar_encartes(1, pasta_loja_data)
+        baixar_encartes(i, pasta_loja_data, session=sess)
 
         # Tenta "Jornal de Ofertas 2..3"
         for i in range(2, 4):
