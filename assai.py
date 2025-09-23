@@ -165,6 +165,7 @@ def build_headless_chrome():
             "safebrowsing.enabled": True,
         }
         opts.add_experimental_option("prefs", prefs)
+        chrome_options.add_argument("--log-level=3")
         # logs do console JS
         opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
         return opts
