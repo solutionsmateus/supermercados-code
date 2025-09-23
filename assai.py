@@ -147,6 +147,7 @@ def build_headless_chrome():
     def _mk_options():
         opts = webdriver.ChromeOptions()
         # headless + estabilidade CI
+        chrome_options = Options()
         opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
