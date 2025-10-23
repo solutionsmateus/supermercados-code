@@ -1,3 +1,5 @@
+# Este script já está pronto para CI (GitHub Actions / Colab / Docker).
+# Ele usa a variável de ambiente OUTPUT_DIR.
 import os
 import time
 import re
@@ -23,6 +25,8 @@ DEFAULT_UA = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 
+# Caminho de saída é lido da variável de ambiente 'OUTPUT_DIR'
+# Se não for definida, usa 'Encartes' no diretório atual
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[assai.py] Pasta de saída: {OUTPUT_DIR}")
@@ -147,7 +151,7 @@ def build_headless_chrome():
     def _mk_options():
         opts = webdriver.ChromeOptions()
         # headless + estabilidade CI
-        chrome_options = Options()
+        # estas flags são essenciais para GitHub Actions / Colab / Docker
         opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
@@ -167,17 +171,19 @@ def build_headless_chrome():
             "safebrowsing.enabled": True,
         }
         opts.add_experimental_option("prefs", prefs)
-        chrome_options.add_argument("--log-level=3")
         # logs do console JS
+        opts.add_argument("--log-level=3")
         opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
         return opts
 
     # 1) tenta undetected-chromedriver se disponível
     try:
         import undetected_chromedriver as uc
+        print("[browser] Tentando iniciar com undetected-chromedriver...")
         opts = _mk_options()
         driver = uc.Chrome(options=opts)
-    except Exception:
+    except Exception as e:
+        print(f"[browser] undetected-chromedriver falhou ({e}). Usando Selenium padrão.")
         # 2) fallback: Selenium Chrome padrão
         opts = _mk_options()
         driver = webdriver.Chrome(options=opts)
@@ -186,10 +192,10 @@ def build_headless_chrome():
     try:
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
-              Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-              Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR','pt','en-US','en']});
-              Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
-              window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR','pt','en-US','en']});
+                Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+                window.chrome = { runtime: {} };
             """
         })
     except Exception:
@@ -211,8 +217,9 @@ def dump_console_logs(tag="log"):
     """Salva console JS para debug."""
     try:
         logs = driver.get_log("browser")
-        (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
-        with open(OUTPUT_DIR / "debug" / f"console_{tag}.log", "w", encoding="utf-8") as f:
+        debug_dir = OUTPUT_DIR / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        with open(debug_dir / f"console_{tag}.log", "w", encoding="utf-8") as f:
             for e in logs:
                 f.write(f"[{e.get('level')}] {e.get('message')}\n")
     except Exception:
@@ -234,7 +241,7 @@ def set_download_dir(download_dir: Path):
                 {"behavior": "allow", "downloadPath": str(download_dir)}
             )
         except Exception:
-            pass
+            pass # Ignora se falhar (o 'prefs' do options deve bastar)
 
 def wait_new_file(dirpath: Path, before: set, timeout=45):
     end = time.time() + timeout
@@ -353,8 +360,9 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
         dump_console_logs(f"slider_fail_j{jornal_num}")
         # salva HTML pra inspeção
         try:
-            (OUTPUT_DIR/"debug").mkdir(parents=True, exist_ok=True)
-            with open(OUTPUT_DIR/"debug"/f"page_j{jornal_num}.html","w",encoding="utf-8") as f:
+            debug_dir = OUTPUT_DIR/"debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            with open(debug_dir/f"page_j{jornal_num}.html","w",encoding="utf-8") as f:
                 f.write(driver.page_source)
         except Exception:
             pass
@@ -395,7 +403,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
                 if not wait_url_live(session, url, referer_url, timeout=10):
                     time.sleep(0.6)
                 download_with_session(session, url, file_path, referer=referer_url)
-                print(f"  OK (requests): {url} -> {file_path}")
+                print(f"  OK (requests): {file_path.name}")
             except Exception as e1:
                 # fallback: tentar baixar pelo navegador
                 try:
@@ -410,7 +418,7 @@ def baixar_encartes(jornal_num: int, download_dir: Path, session: requests.Sessi
                         data = newf.read_bytes()
                         file_path.write_bytes(data)
                         newf.unlink(missing_ok=True)
-                    print(f"  OK (browser): {url} -> {file_path}")
+                    print(f"  OK (browser): {file_path.name}")
                 except Exception as e2:
                     print(f"  Falha no download: {url} (requests: {e1}; browser: {e2})")
 
@@ -482,9 +490,10 @@ try:
             aguardar_elemento("div.ofertas-slider", timeout=45)
         except Exception as e:
             print(f"[startup] slider não apareceu: {e}")
-            (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
-            driver.save_screenshot(str((OUTPUT_DIR / "debug" / "site_indisponivel.png").resolve()))
-            with open(OUTPUT_DIR / "debug" / "site_indisponivel.html", "w", encoding="utf-8") as f:
+            debug_dir = OUTPUT_DIR / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            driver.save_screenshot(str((debug_dir / "site_indisponivel.png").resolve()))
+            with open(debug_dir / "site_indisponivel.html", "w", encoding="utf-8") as f:
                 f.write(driver.page_source)
             dump_console_logs("site_indisponivel")
             # passa para próxima loja
@@ -529,7 +538,8 @@ try:
 
                 baixar_encartes(i, pasta_loja_data, session=sess)
             except Exception as e:
-                print(f" Jornal {i} indisponível para {loja}: {str(e)}")
+                print(f" Jornal {i} indisponível para {loja}.")
+                break # Se o 2 não existe, o 3 provavelmente também não
 
         # Volta ao seletor para próximo estado
         clicar_elemento("a.seletor-loja")
@@ -540,13 +550,15 @@ try:
 except Exception as e:
     print(f"Erro crítico: {str(e)}")
     try:
-        (OUTPUT_DIR / "debug").mkdir(parents=True, exist_ok=True)
-        driver.save_screenshot(str((OUTPUT_DIR / "debug" / "erro_encartes.png").resolve()))
-        with open(OUTPUT_DIR / "debug" / "page.html", "w", encoding="utf-8") as f:
+        debug_dir = OUTPUT_DIR / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        driver.save_screenshot(str((debug_dir / "erro_encartes.png").resolve()))
+        with open(debug_dir / "page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
         dump_console_logs("erro_critico")
-        print(f"Artefatos de debug salvos em: {(OUTPUT_DIR / 'debug').resolve()}")
+        print(f"Artefatos de debug salvos em: {debug_dir.resolve()}")
     except Exception:
         pass
 finally:
+    print("Encerrando o driver.")
     driver.quit()
