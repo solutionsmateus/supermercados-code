@@ -42,7 +42,7 @@ def processar_encartes():
     driver = iniciar_driver()
     wait = WebDriverWait(driver, 35)
     driver.get(BASE_URL)
-    time.sleep(10)
+    time.sleep(7)
 
     encartes = driver.find_elements(
         By.XPATH, '//div[contains(@class, "real3dflipbook") and contains(@style, "cursor: pointer")]'
@@ -56,13 +56,13 @@ def processar_encartes():
 
             # Recarrega a listagem antes de clicar (evita stale element)
             driver.get(BASE_URL)
-            time.sleep(9)
+            time.sleep(7)
             encartes = driver.find_elements(
                 By.XPATH, '//div[contains(@class, "real3dflipbook") and contains(@style, "cursor: pointer")]'
             )
 
             encartes[i].click()
-            time.sleep(9)
+            time.sleep(7)
 
             nome_pasta = f"encarte_{i+1}"
             pasta_encarte = ENCARTE_DIR / nome_pasta
@@ -70,7 +70,7 @@ def processar_encartes():
             print(f"Pasta do encarte: {pasta_encarte}")
 
             pagina = 1
-            max_paginas = 20  # limite de segurança
+            max_paginas = 5  # limite de segurança
             paginas_salvas = set()
 
             while pagina <= max_paginas:
