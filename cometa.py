@@ -70,7 +70,7 @@ def processar_encartes():
             print(f"Pasta do encarte: {pasta_encarte}")
 
             pagina = 1
-            max_paginas = 5  # limite de segurança
+            max_paginas = 3  # limite de segurança
             paginas_salvas = set()
 
             while pagina <= max_paginas:
