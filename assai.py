@@ -91,12 +91,12 @@ def baixar_encartes(jornal_num, download_dir):
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
         links_download = wait.until(
             EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@class, 'download') and contains(@href, '.jpeg')]")
+                (By.XPATH, "//div[contains(@class, #change on selector 'slick-slide slick-current slick-active') and contains('data-slick-index')]")
             )
         )
         current_page_urls = []
         for link in links_download:
-            url = link.get_attribute("href")
+            url = link.get_attribute(#change no get-attribute "data-slick-index")
             if url and url not in downloaded_urls:
                 current_page_urls.append(url)
                 downloaded_urls.add(url)
