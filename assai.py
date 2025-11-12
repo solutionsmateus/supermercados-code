@@ -9,7 +9,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import re
 
-# CHANGE: Ajuste do mapeamento da Bahia para o NOME DA LOJA (e não a região)
 LOJAS_ESTADOS = {
     "Maranhão": "Assaí Angelim",
     "Alagoas": "Assaí Maceió Farol",
@@ -22,37 +21,27 @@ LOJAS_ESTADOS = {
     "Bahia": "Assaí Vitória da Conquista", # CHANGE
 }
 
-# CHANGE: Região preferida por estado (usado quando existe select.regiao)
 REGIAO_POR_ESTADO = {
     "Bahia": "Interior", # CHANGE: explicitamos a região para BA
 }
 
 BASE_URL = "https://www.assai.com.br/ofertas"
-# Certifique-se de que a pasta de destino é resolvida corretamente
 desktop_path = Path.home() / "Desktop/Encartes-Concorrentes/Assai"
 
 # === HEADLESS CHROME ===
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
-    # Headless moderno do Chrome
     options.add_argument("--headless=new")
-    # Estabilidade em ambientes CI (GitHub Actions, containers, etc.)
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-features=VizDisplayCompositor")
-    # Tamanho de viewport consistente (substitui start-maximized no headless)
     options.add_argument("--window-size=1920,1080")
-    # User-Agent explícito ajuda alguns sites a não “minimizar” conteúdo
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
-    # Idioma (seletivos de loja/estado às vezes dependem do locale)
     options.add_argument("--lang=pt-BR,pt")
-    
-    # Inicializa o driver sem especificar o caminho, dependendo do PATH
-    # Se o Chrome Driver não estiver no PATH, você precisará especificar o 'service'
     return webdriver.Chrome(options=options)
 
 try:
@@ -150,12 +139,11 @@ def baixar_encartes(jornal_num, download_dir):
         try:
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(0.5)
+            time.sleep(1)
             next_button.click()
-            time.sleep(2) # Espera o carrossel avançar e carregar novas imagens
+            time.sleep(2) 
             page_num += 1
         except Exception as e:
-            # Se não encontrar o botão 'Próximo' (ou se ele for desabilitado), o carrossel terminou
             print(f"Fim do carrossel alcançado ou erro no botão 'Next': {e}")
             break
 
@@ -170,7 +158,7 @@ def select_by_visible_text_contains(select_el, target_text, timeout=10):
             return True
     return False
 
-# === MAIN SCRIPT EXECUTION ===
+
 try:
     driver.get(BASE_URL)
     time.sleep(2)
