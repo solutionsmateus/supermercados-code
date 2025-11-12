@@ -156,7 +156,7 @@ def baixar_encartes(jornal_num, download_dir):
             # Tenta clicar no botão 'Próximo'
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(2)
+            time.sleep(0.5)
             next_button.click()
             time.sleep(2) # Espera o carrossel avançar e carregar novas imagens
             page_num += 1
