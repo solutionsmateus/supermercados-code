@@ -154,7 +154,7 @@ def baixar_encartes(jornal_num, download_dir):
 
         try:
             # Tenta clicar no botão 'Próximo'
-            next_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//div[contains(@class, "ofertas-slider")]//button[contains(@class, "slick-next")]')))
+            next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
             time.sleep(2)
             next_button.click()
