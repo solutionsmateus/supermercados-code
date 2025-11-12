@@ -127,7 +127,7 @@ def baixar_encartes(jornal_num, download_dir):
         for idx, url in enumerate(current_urls, 1):
             try:
                 resp = requests.get(url, timeout=15)
-                if resp.status_code == 200:
+                if resp.status_code == 200:
                     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
                     path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}.jpg"
                     with open(path, "wb") as f:
