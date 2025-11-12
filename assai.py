@@ -141,7 +141,7 @@ def baixar_encartes(jornal_num, download_dir):
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
             time.sleep(0.5)
             next_button.click()
-            time.sleep(3) 
+            time.sleep(2) 
             page_num += 1
         except Exception as e:
             print(f"Fim do carrossel alcançado ou erro no botão 'Next': {e}")
