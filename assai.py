@@ -115,16 +115,12 @@ def baixar_encartes(jornal_num, download_dir):
                 timeout=10 # Tempo de espera reduzido para tentar detectar o fim mais rápido
             )
         except:
-            # Se não encontrar mais imagens após a primeira página, assume que o carrossel terminou.
             if page_num > 1:
                 break
-            # Caso contrário, tenta novamente no loop (pode ser um erro de carregamento)
             links_download = []
 
         current_page_urls = []
         for link in links_download:
-            # === ERRO CRÍTICO 2 CORRIGIDO: O get_attribute estava incompleto. ===
-            # Assume que o elemento é um <img> e o URL está no atributo 'src'.
             url = link.get_attribute("src")
             
             if url and url not in downloaded_urls:
@@ -137,7 +133,6 @@ def baixar_encartes(jornal_num, download_dir):
         for idx, url in enumerate(current_page_urls, start=1):
             if not url: continue # Pula se a URL estiver vazia por algum motivo
             
-            # Garante que a URL é acessível e baixa
             try:
                 response = requests.get(url, timeout=10)
                 if response.status_code == 200:
@@ -153,7 +148,6 @@ def baixar_encartes(jornal_num, download_dir):
                  print(f"Erro de requisição ao baixar {url}: {req_e}")
 
         try:
-            # Tenta clicar no botão 'Próximo'
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
             time.sleep(0.5)
@@ -165,7 +159,6 @@ def baixar_encartes(jornal_num, download_dir):
             print(f"Fim do carrossel alcançado ou erro no botão 'Next': {e}")
             break
 
-# CHANGE: helper para selecionar por "contém texto" (robusto contra variações de acento/espaço)
 def select_by_visible_text_contains(select_el, target_text, timeout=10):
     WebDriverWait(driver, timeout).until(lambda d: len(select_el.find_elements(By.TAG_NAME, "option")) > 0)
     sel = Select(select_el)
@@ -183,7 +176,6 @@ try:
     time.sleep(2)
 
     try:
-        # Tenta fechar o modal/popup inicial
         clicar_elemento("button.ot-close-icon", timeout=5) 
     except:
         pass
@@ -194,12 +186,10 @@ try:
     for estado, loja in LOJAS_ESTADOS.items():
         print(f"--- Processando: {estado} - {loja} ---")
 
-        # 1. Seleciona o Estado
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
         time.sleep(1)
 
-        # 2. Seleciona a Região (se aplicável)
         if estado in REGIAO_POR_ESTADO:
             try:
                 regiao_select_element = aguardar_elemento("select.regiao", timeout=15)
@@ -209,7 +199,6 @@ try:
             except Exception as e:
                 print(f" Não foi possível selecionar a região para {estado}: {e}")
 
-        # 3. Seleciona a Loja
         loja_select = aguardar_elemento("select.loja", timeout=20)
         try:
             Select(loja_select).select_by_visible_text(loja)
@@ -220,27 +209,21 @@ try:
 
         time.sleep(0.8)
 
-        # 4. Confirma a Seleção
         clicar_elemento("button.confirmar")
         time.sleep(3) # Espera um pouco mais para o carregamento pós-confirmação
 
-        # 5. Começa a Raspagem
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
 
-        # Prepara o diretório de download
         nome_loja = re.sub(r'[\\/*?:"<>|\s]', '_', loja) # Sanitiza o nome da loja
         download_dir = desktop_path / f"encartes_{nome_loja}_{data_nome}"
         os.makedirs(download_dir, exist_ok=True)
 
-        # Rola para forçar o lazy-load
         scroll_down_and_up()
-        baixar_encartes(1, download_dir) # Baixa o primeiro jornal
+        baixar_encartes(1, download_dir) 
 
-        # Tenta baixar os jornais 2 e 3 (se existirem)
         for i in range(2, 4):
             try:
-                # Clica no botão do próximo jornal (ex: "Jornal de Ofertas 2")
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
                 time.sleep(3)
                 aguardar_elemento("div.ofertas-slider", timeout=30)
@@ -249,7 +232,6 @@ try:
             except Exception as e:
                 print(f" Jornal {i} indisponível ou erro para {loja}. Tentando o próximo. Erro: {str(e)}")
 
-        # Volta para o seletor de loja para o próximo loop de estado/loja
         clicar_elemento("a.seletor-loja")
         time.sleep(2)
 
