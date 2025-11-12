@@ -139,9 +139,9 @@ def baixar_encartes(jornal_num, download_dir):
         try:
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(1)
+            time.sleep(0.5)
             next_button.click()
-            time.sleep(2) 
+            time.sleep(3) 
             page_num += 1
         except Exception as e:
             print(f"Fim do carrossel alcançado ou erro no botão 'Next': {e}")
