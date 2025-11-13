@@ -115,7 +115,7 @@ def baixar_encartes(jornal_num, download_dir):
 
         current_urls = []
         for img in imgs:
-            src = img.get_attribute("href")
+            src = img.get_attribute("src")
             if src and ("jpeg" in src.lower() or "jpeg" in src.lower()) and src not in downloaded_urls:
                 current_urls.append(src)
                 downloaded_urls.add(src)
@@ -151,7 +151,7 @@ def baixar_encartes(jornal_num, download_dir):
 
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpeg')]")
+                    (By.XPATH, "//div[contains(@class, 'slick-slide slick-current slick-active')]//img[contains(@src, 'jpeg')]")
                 )
             )
             time.sleep(2.5)
@@ -208,7 +208,7 @@ try:
         time.sleep(3)
 
         # 5. Raspagem
-        aguardar_elemento("div.ofertas-slider", timeout=30)
+        aguardar_elemento("div.slick-slide slick-current slick-active", timeout=30)
         data_nome = encontrar_data()
         nome_loja = re.sub(r'[\\/*?:"<>|\s]', '_', loja)
         download_dir = OUTPUT_DIR / f"encartes_{nome_loja}_{data_nome}"
@@ -222,7 +222,7 @@ try:
             try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
                 time.sleep(3)
-                aguardar_elemento("div.ofertas-slider", timeout=30)
+                aguardar_elemento("div.slick-slide slick-current slick-active", timeout=30)
                 baixar_encartes(i, download_dir)
             except Exception as e:
                 print(f"  Jornal {i} não disponível: {e}")
