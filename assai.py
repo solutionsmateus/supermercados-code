@@ -94,51 +94,60 @@ def baixar_encartes(jornal_num, download_dir):
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
 
-        # Força carregamento lazy-load
+        # Força lazy-load
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
         driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(1)
 
-        # Espera imagens no slide ativo
+        # ESPERA O LINK DO ENCARTE (não a imagem!)
         try:
-            imgs = WebDriverWait(driver, 20).until(
+            links = WebDriverWait(driver, 20).until(
                 EC.presence_of_all_elements_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-slide slick-current slick-active')]//img[contains(@src, 'jpeg')]")
+                    (By.XPATH, """
+                        //div[contains(@class, 'slick-active')]//a[
+                            contains(@href, 'campanha') and 
+                            contains(@href, 'pagina') and 
+                            (contains(@href, '.jpeg') or contains(@href, '.jpg'))
+                        ]
+                    """)
                 )
             )
         except:
             if page_num > 1:
-                print("  Nenhuma nova imagem. Fim do carrossel.")
+                print("  Nenhum link de encarte encontrado. Fim do carrossel.")
                 break
-            imgs = []
+            links = []
 
         current_urls = []
-        for img in imgs:
-            src = img.get_attribute("href")
-            if src and ("jpeg" in src.lower() or "jpeg" in src.lower()) and src not in downloaded_urls:
-                current_urls.append(src)
-                downloaded_urls.add(src)
+        for link in links:
+            url = link.get_attribute("href")
+            if url and url not in downloaded_urls:
+                current_urls.append(url)
+                downloaded_urls.add(url)
 
         if not current_urls and page_num > 1:
             break
 
-        # Download
+        # DOWNLOAD DOS ENCARTES
         for idx, url in enumerate(current_urls, 1):
             try:
-                resp = requests.get(url, timeout=15)
+                resp = requests.get(url, timeout=20)
                 if resp.status_code == 200:
+                    # Detecta extensão real
+                    ext = ".jpeg" if "jpeg" in url.lower() else ".jpg"
                     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
-                    path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}.jpeg"
+                    filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}{ext}"
+                    path = download_dir / filename
                     with open(path, "wb") as f:
                         f.write(resp.content)
-                    print(f"    [OK] {path.name}")
+                    print(f"    [ENCA] {path.name}")
                 else:
                     print(f"    [X] Falha {resp.status_code}: {url}")
             except Exception as e:
                 print(f"    [Erro] {url}: {e}")
 
-        # Avançar carrossel
+        # AVANÇA O CARROSSEL
         try:
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
             if not next_btn.is_enabled():
@@ -147,11 +156,12 @@ def baixar_encartes(jornal_num, download_dir):
 
             driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
             time.sleep(0.8)
-            driver.execute_script("arguments[0].click();", next_btn)  # JS click
+            driver.execute_script("arguments[0].click();", next_btn)
 
+            # Espera novo encarte carregar
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpeg')]")
+                    (By.XPATH, "//div[contains(@class, 'slick-active')]//a[contains(@href, 'campanha')]")
                 )
             )
             time.sleep(2.5)
@@ -160,7 +170,7 @@ def baixar_encartes(jornal_num, download_dir):
         except Exception as e:
             print(f"  Fim do carrossel: {e}")
             break
-
+    
 # === MAIN ===
 try:
     driver.get(BASE_URL)
