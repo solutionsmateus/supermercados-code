@@ -89,109 +89,61 @@ def select_by_visible_text_contains(select_el, target_text):
 # === DOWNLOAD DE ENCARTE (CARROSSEL) ===
 def baixar_encartes(jornal_num, download_dir):
     page_num = 1
-    downloaded_urls = set()
+    downloaded = set()                     # evita duplicar (caso o slide repita)
 
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
 
-        # Força lazy-load
+        # -------------------------------------------------
+        # 1. Força o lazy‑load (scroll total)
+        # -------------------------------------------------
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
         driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(1)
 
-        # ESPERA O LINK DO ENCARTE (não a imagem!)
+        # -------------------------------------------------
+        # 2. Espera o slide ativo (slick‑active) aparecer
+        # -------------------------------------------------
         try:
-            links = WebDriverWait(driver, 20).until(
-                EC.presence_of_all_elements_located(
-                    (By.XPATH, """
-                        //div[contains(@class, 'slick-active')]//a[
-                            contains(@href, 'campanha') and 
-                            contains(@href, 'pagina') and 
-                            (contains(@href, '.jpeg') or contains(@href, '.jpg'))
-                        ]
-                    """)
+            slide = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//div[contains(@class,'slick-active') and contains(@class,'slick-current')]")
                 )
             )
-        except:
-            if page_num > 1:
-                print("  Nenhum link de encarte encontrado. Fim do carrossel.")
-                break
-            links = []
-
-        current_urls = []
-        for link in links:
-            url = link.get_attribute("href")
-            if url and url not in downloaded_urls:
-                current_urls.append(url)
-                downloaded_urls.add(url)
-
-        if not current_urls and page_num > 1:
+        except Exception:
+            print("  Nenhum slide ativo encontrado – fim do carrossel.")
             break
 
-        # DOWNLOAD DOS ENCARTES
-        for idx, url in enumerate(current_urls, 1):
-            try:
-                resp = requests.get(url, timeout=20)
-                if resp.status_code == 200:
-                    # Detecta extensão real
-                    ext = ".jpeg" if "jpeg" in url.lower() else ".jpg"
-                    ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
-                    filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}{ext}"
-                    path = download_dir / filename
-                    with open(path, "wb") as f:
-                        f.write(resp.content)
-                    print(f"    [ENCA] {path.name}")
-                else:
-                    print(f"    [X] Falha {resp.status_code}: {url}")
-            except Exception as e:
-                print(f"    [Erro] {url}: {e}")
+        # -------------------------------------------------
+        # 3. Screenshot **apenas do slide** (mais rápido e limpo)
+        # -------------------------------------------------
+        ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
+        filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{ts}.jpeg"
+        path = download_dir / filename
 
-        # AVANÇA O CARROSSEL
+        # captura o elemento inteiro (slide) → evita logos externas
+        slide.screenshot(str(path))
+        print(f"    [SCREEN] {path.name}")
+
+        # -------------------------------------------------
+        # 4. Avança o carrossel
+        # -------------------------------------------------
         try:
-            next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
-            if not next_btn.is_enabled():
-                print("  Botão Next desabilitado.")
-                break
-
-            driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
-            time.sleep(0.8)
+            next_btn = driver.find_element(
+                By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)"
+            )
             driver.execute_script("arguments[0].click();", next_btn)
 
-            # Espera novo encarte carregar
+            # espera o próximo slide ficar ativo
             WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-active')]//a[contains(@href, 'campanha')]")
-                )
+                EC.staleness_of(slide)   # o slide antigo desaparece
             )
-            time.sleep(2.5)
+            time.sleep(2)                # estabiliza o lazy‑load
             page_num += 1
 
         except Exception as e:
-            print(f"  Fim do carrossel: {e}")
-            break
-            
-        # Avançar carrossel
-        try:
-            next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
-            if not next_btn.is_enabled():
-                print("  Botão Next desabilitado.")
-                break
-
-            driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
-            time.sleep(0.8)
-            driver.execute_script("arguments[0].click();", next_btn)  # JS click
-
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-slide slick-current slick-active')]//img[contains(@src, 'jpeg')]")
-                )
-            )
-            time.sleep(2.5)
-            page_num += 1
-
-        except Exception as e:
-            print(f"  Fim do carrossel: {e}")
+            print(f"  Fim do carrossel (jornal {jornal_num}): {e}")
             break
 
 # === MAIN ===
