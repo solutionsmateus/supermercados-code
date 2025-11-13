@@ -104,7 +104,7 @@ def baixar_encartes(jornal_num, download_dir):
         try:
             imgs = WebDriverWait(driver, 20).until(
                 EC.presence_of_all_elements_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpg') or contains(@src, 'jpeg')]")
+                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpeg')]")
                 )
             )
         except:
@@ -116,7 +116,7 @@ def baixar_encartes(jornal_num, download_dir):
         current_urls = []
         for img in imgs:
             src = img.get_attribute("src")
-            if src and ("jpg" in src.lower() or "jpeg" in src.lower()) and src not in downloaded_urls:
+            if src and ("jpeg" in src.lower() or "jpeg" in src.lower()) and src not in downloaded_urls:
                 current_urls.append(src)
                 downloaded_urls.add(src)
 
@@ -129,7 +129,7 @@ def baixar_encartes(jornal_num, download_dir):
                 resp = requests.get(url, timeout=15)
                 if resp.status_code == 200:
                     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
-                    path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}.jpg"
+                    path = download_dir / f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}.jpeg"
                     with open(path, "wb") as f:
                         f.write(resp.content)
                     print(f"    [OK] {path.name}")
@@ -151,7 +151,7 @@ def baixar_encartes(jornal_num, download_dir):
 
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located(
-                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpg')]")
+                    (By.XPATH, "//div[contains(@class, 'slick-active')]//img[contains(@src, 'jpeg')]")
                 )
             )
             time.sleep(2.5)
