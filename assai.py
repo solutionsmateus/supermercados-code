@@ -170,7 +170,7 @@ def baixar_encartes(jornal_num, download_dir):
         except Exception as e:
             print(f"  Fim do carrossel: {e}")
             break
-
+            
         # Avançar carrossel
         try:
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
