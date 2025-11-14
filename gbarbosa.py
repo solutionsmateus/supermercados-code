@@ -9,16 +9,13 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://blog.gbarbosa.com.br/ofertas/"
 
-# ===== Saída padronizada (usa OUTPUT_DIR; fallback ./Encartes/G-Barbosa) =====
 BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 DOWNLOAD_BASE = BASE_OUTPUT / "G-Barbosa"
 DOWNLOAD_BASE.mkdir(parents=True, exist_ok=True)
 print(f"[gbarbosa.py] Pasta base de saída: {DOWNLOAD_BASE}")
 
-# ===== Chrome headless =====
 def build_headless_chrome(download_dir: Path):
     options = webdriver.ChromeOptions()
-    # Headless moderno e flags de CI
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
@@ -30,7 +27,6 @@ def build_headless_chrome(download_dir: Path):
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
-    # Preferências de download
     prefs = {
         "download.prompt_for_download": False,
         "download.default_directory": str(download_dir),
@@ -50,10 +46,7 @@ def _list_files(dirpath: Path):
         return set()
 
 def _wait_new_download(dirpath: Path, before: set, timeout: int = 120) -> Path | None:
-    """
-    Espera aparecer um novo arquivo na pasta (e terminar o .crdownload).
-    Retorna o Path do arquivo novo ou None se não aparecer.
-    """
+    
     end = time.time() + timeout
     while time.time() < end:
         files = _list_files(dirpath)
@@ -81,7 +74,6 @@ def baixar_estado(uf: str):
     driver.get(BASE_URL)
     time.sleep(5)
 
-    # Seleciona o estado
     try:
         botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
         botao_estado.click()
@@ -99,57 +91,47 @@ def baixar_estado(uf: str):
                 break
 
             print(f"\nAbrindo encarte {index+1} de {len(encartes)}…")
-            # Recoleta para evitar stale references
             encartes = driver.find_elements(By.XPATH, '//div[contains(@class, "df-book-cover")]')
             encartes[index].click()
             time.sleep(2)
-
-            # Abre menu e botão de download
-            menu_btn = wait.until(EC.element_to_be_clickable(
-                (By.XPATH, '//div[contains(@class, "df-ui-btn") and contains(@class, "df-ui-more")]')
-            ))
-            menu_btn.click()
-            time.sleep(1.5)
-
-            download_btn = wait.until(EC.element_to_be_clickable(
-                (By.XPATH, '//a[contains(@class, "df-ui-download")]')
-            ))
-
-            before = _list_files(DOWNLOAD_BASE)
-            download_btn.click()
-            print("Download solicitado…")
-
-            arquivo = _wait_new_download(DOWNLOAD_BASE, before, timeout=120)
-            if arquivo:
-                # renomeia e move p/ pasta do UF
-                base_name = _sanitize(arquivo.stem)
-                destino = pasta_uf / f"{base_name}.pdf"
-                # evita overwrite
-                k = 1
-                while destino.exists():
-                    destino = pasta_uf / f"{base_name}_{k}.pdf"
-                    k += 1
-                arquivo.replace(destino)
-                print(f"Download concluído: {destino}")
-            else:
-                print("⚠️ Não detectei novo arquivo na pasta (timeout).")
-
-            # Volta para lista e reabre o estado
-            driver.get(BASE_URL)
-            time.sleep(3)
-            try:
-                botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
-                botao_estado.click()
+            
+            while True:
+                try:
+                    caminho_png = DOWNLOAD_BASE / f"{encartes}_{screenshot_index}.png"
+                    driver.save_screenshot(str(caminho_png))
+                    print(f"  Capturado: {caminho_png.name}")
+                    
+                    driver.execute_script("window.scrollBy(0, 500);")
+                    time.sleep(1.5) 
+                    new_scroll_position = driver.execute_script("return window.pageYOffset")
+                    
+                    if new_scroll_position == last_height:
+                        print("Fim do encarte alcançado. Encerrando captura.")
+                        break
+                    
+                    last_height = new_scroll_position
+                    screenshot_index += 1
+                    
+                except Exception as e:
+                    print(f"Não foi possível capturar as imagens ou houve um erro: {e}")
+                    break 
+                
+                driver.get(BASE_URL)
                 time.sleep(3)
-            except Exception as e:
-                print(f"Erro ao reabrir estado {uf}: {e}")
+                
+                try:
+                    botao_estado = wait.until(EC.element_to_be_clickable((By.XPATH, f'//button[normalize-space()="{uf}"]')))
+                    botao_estado.click()
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"Erro ao reabrir estado {uf}: {e}")
+                
                 break
 
             index += 1
 
         except Exception as e:
             print(f"Erro no encarte {index+1}: {e}")
-            # Tenta se recuperar e seguir para o próximo
             driver.get(BASE_URL)
             time.sleep(3)
             try:
@@ -161,8 +143,7 @@ def baixar_estado(uf: str):
             index += 1
             continue
 
-# Liste aqui os estados desejados (siglas como aparecem no site: AL, SE, BA, PE, CE, …)
-ESTADOS = ["AL", "SE"]  # ajuste conforme necessário
+ESTADOS = ['AL', 'SE']
 
 for uf in ESTADOS:
     baixar_estado(uf)
