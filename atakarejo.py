@@ -8,16 +8,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# === SAÍDA PADRONIZADA (usa env OUTPUT_DIR; fallback ./Encartes/Atakarejo) ===
 BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 ENCARTE_DIR = BASE_OUTPUT / "Atakarejo"
 ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[atakarejo.py] Pasta base de saída: {ENCARTE_DIR}")
 
-CIDADE = "Vitoria-da-Conquista"  # use sem acentos/espacos p/ compor a pasta
+CIDADE = "Vitoria-da-Conquista"  
 URL_CIDADE = "https://atakarejo.com.br/cidade/vitoria-da-conquista"
 
-# === CHROME HEADLESS =========================================================
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -42,11 +40,6 @@ def slugify(s: str) -> str:
     return s[:80] if s else "sem_data"
 
 def encontrar_data_validade() -> str:
-    """
-    Tenta capturar um texto de validade na página.
-    Ajuste os seletores se o site mudar.
-    """
-    # 1) Tenta por elementos que geralmente trazem a validade
     candidatos = [
         (By.XPATH, "//h3[contains(translate(., 'VALIDEADE', 'valideade'), 'validade') or contains(., 'Validade')]"),
         (By.XPATH, "//p[contains(., 'Validade') or contains(., 'VALIDADE')]"),
@@ -62,7 +55,6 @@ def encontrar_data_validade() -> str:
         except:
             pass
 
-    # 2) Varre todo o body como fallback e procura um padrão dd/mm
     try:
         body = driver.find_element(By.TAG_NAME, "body").text
         m = re.search(r"(validade.*?)(\d{1,2}/\d{1,2}/\d{2,4}.*)$", body, flags=re.I | re.S)
@@ -86,7 +78,6 @@ def baixar_pdf(url: str, destino: Path):
 try:
     driver.get(URL_CIDADE)
 
-    # Botões de download costumam ter essa classe
     links = wait.until(EC.presence_of_all_elements_located(
         (By.XPATH, '//a[contains(@class, "button-download-ofertas") or contains(@href, ".pdf")]')
     ))

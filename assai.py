@@ -9,7 +9,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 import re
 
-# === CONFIGURAÇÕES ===
 LOJAS_ESTADOS = {
     "Maranhão": "Assaí Angelim",
     "Alagoas": "Assaí Maceió Farol",
@@ -28,11 +27,9 @@ REGIAO_POR_ESTADO = {
 
 BASE_URL = "https://www.assai.com.br/ofertas"
 
-# CI-FRIENDLY: Usa workspace do GitHub Actions
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/github/workspace/encartes"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# === HEADLESS CHROME ===
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -53,7 +50,6 @@ except Exception as e:
 
 wait = WebDriverWait(driver, 30)
 
-# === FUNÇÕES AUXILIARES ===
 def encontrar_data():
     try:
         enc_data = WebDriverWait(driver, 10).until(
@@ -86,7 +82,6 @@ def select_by_visible_text_contains(select_el, target_text):
             return True
     return False
 
-# === DOWNLOAD DE ENCARTE (CARROSSEL) ===
 def baixar_encartes(jornal_num, download_dir):
     page_num = 1
     downloaded_urls = set()
@@ -94,13 +89,11 @@ def baixar_encartes(jornal_num, download_dir):
     while True:
         print(f"  Baixando página {page_num} do jornal {jornal_num}...")
 
-        # Força lazy-load
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
         driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(1)
 
-        # ESPERA O LINK DO ENCARTE (não a imagem!)
         try:
             links = WebDriverWait(driver, 20).until(
                 EC.presence_of_all_elements_located(
@@ -129,12 +122,10 @@ def baixar_encartes(jornal_num, download_dir):
         if not current_urls and page_num > 1:
             break
 
-        # DOWNLOAD DOS ENCARTES
         for idx, url in enumerate(current_urls, 1):
             try:
                 resp = requests.get(url, timeout=20)
                 if resp.status_code == 200:
-                    # Detecta extensão real
                     ext = ".jpeg" if "jpeg" in url.lower() else ".jpg"
                     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
                     filename = f"encarte_jornal_{jornal_num}_pagina_{page_num}_{idx}_{ts}{ext}"
@@ -147,7 +138,6 @@ def baixar_encartes(jornal_num, download_dir):
             except Exception as e:
                 print(f"    [Erro] {url}: {e}")
 
-        # AVANÇA O CARROSSEL
         try:
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
             if not next_btn.is_enabled():
@@ -158,7 +148,6 @@ def baixar_encartes(jornal_num, download_dir):
             time.sleep(0.8)
             driver.execute_script("arguments[0].click();", next_btn)
 
-            # Espera novo encarte carregar
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located(
                     (By.XPATH, "//div[contains(@class, 'slick-active')]//a[contains(@href, 'campanha')]")
@@ -171,12 +160,10 @@ def baixar_encartes(jornal_num, download_dir):
             print(f"  Fim do carrossel: {e}")
             break
     
-# === MAIN ===
 try:
     driver.get(BASE_URL)
     time.sleep(3)
 
-    # Fecha popup
     try:
         clicar_elemento("button.ot-close-icon", timeout=5)
     except:
@@ -188,12 +175,10 @@ try:
     for estado, loja in LOJAS_ESTADOS.items():
         print(f"\n--- Processando: {estado} - {loja} ---")
 
-        # 1. Estado
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
         time.sleep(1)
 
-        # 2. Região (se aplicável)
         if estado in REGIAO_POR_ESTADO:
             try:
                 regiao_select = aguardar_elemento("select.regiao", timeout=15)
@@ -203,7 +188,6 @@ try:
             except Exception as e:
                 print(f"  Região não selecionada: {e}")
 
-        # 3. Loja
         loja_select = aguardar_elemento("select.loja", timeout=20)
         try:
             Select(loja_select).select_by_visible_text(loja)
@@ -213,21 +197,17 @@ try:
 
         time.sleep(0.8)
 
-        # 4. Confirmar
         clicar_elemento("button.confirmar")
         time.sleep(3)
 
-        # 5. Raspagem
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
         nome_loja = re.sub(r'[\\/*?:"<>|\s]', '_', loja)
         download_dir = OUTPUT_DIR / f"encartes_{nome_loja}_{data_nome}"
         download_dir.mkdir(parents=True, exist_ok=True)
 
-        # Primeiro jornal
         baixar_encartes(1, download_dir)
 
-        # Jornais 2 e 3
         for i in range(2, 4):
             try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
@@ -237,7 +217,6 @@ try:
             except Exception as e:
                 print(f"  Jornal {i} não disponível: {e}")
 
-        # Voltar ao seletor
         try:
             clicar_elemento("a.seletor-loja")
             time.sleep(2)

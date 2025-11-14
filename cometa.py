@@ -9,21 +9,19 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://cometasupermercados.com.br/ofertas/"
 
-# === SAÍDA PADRONIZADA (usa env OUTPUT_DIR; fallback ./Encartes/Cometa-Supermercados) ===
 BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 ENCARTE_DIR = (BASE_OUTPUT / "Cometa-Supermercados")
 ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[cometa.py] Pasta base de saída: {ENCARTE_DIR}")
 
-# === CHROME HEADLESS ===
 def iniciar_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")              # headless moderno
+    options.add_argument("--headless=new")             
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-features=VizDisplayCompositor")
-    options.add_argument("--window-size=1920,1080")     # viewport consistente
+    options.add_argument("--window-size=1920,1080")     
     options.add_argument("--lang=pt-BR,pt")
     options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -32,7 +30,7 @@ def iniciar_driver():
     return webdriver.Chrome(options=options)
 
 def salvar_print(driver, pasta_destino: Path, nome_arquivo: str):
-    driver.execute_script("window.scrollTo(0, 0);")  # garante topo
+    driver.execute_script("window.scrollTo(0, 0);")  
     caminho = pasta_destino / nome_arquivo
     pasta_destino.mkdir(parents=True, exist_ok=True)
     driver.save_screenshot(str(caminho))
@@ -54,7 +52,6 @@ def processar_encartes():
         try:
             print(f"\nProcessando encarte {i + 1} de {total}")
 
-            # Recarrega a listagem antes de clicar (evita stale element)
             driver.get(BASE_URL)
             time.sleep(7)
             encartes = driver.find_elements(
@@ -70,12 +67,11 @@ def processar_encartes():
             print(f"Pasta do encarte: {pasta_encarte}")
 
             pagina = 1
-            max_paginas = 3  # limite de segurança
+            max_paginas = 3  
             paginas_salvas = set()
 
             while pagina <= max_paginas:
                 try:
-                    # Tenta identificar a página exibida (se houver data-page no DOM)
                     page_id = None
                     try:
                         page_id = driver.find_element(
@@ -93,7 +89,6 @@ def processar_encartes():
                     nome_arquivo = f"{nome_pasta}_pagina_{pagina}.png"
                     salvar_print(driver, pasta_encarte, nome_arquivo)
 
-                    # Próxima página
                     try:
                         btn_proximo = wait.until(
                             EC.element_to_be_clickable(

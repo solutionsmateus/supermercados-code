@@ -30,7 +30,6 @@ LOJAS_ESTADOS = {
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
 
-# === Utils: normalização e clique robusto ====================================
 def strip_accents(s: str) -> str:
     if not s:
         return ""
@@ -49,7 +48,6 @@ def click_robusto(driver, el) -> bool:
         except Exception:
             return False
 
-# === CHROME HEADLESS =========================================================
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -77,12 +75,10 @@ def clicar_confirmar():
         pass
 
 def selecionar_uf_cidade(uf: str, cidade: str):
-    # UF por value
     uf_sel = wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[96px]')]")))
     Select(uf_sel).select_by_value(uf)
     time.sleep(0.6)
 
-    # Cidade: tenta exato; se falhar, usa contém/sem acento
     cid_sel = wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[360px]')]")))
     alvo = strip_accents(cidade)
     try:
@@ -133,7 +129,7 @@ def baixar_encartes(uf: str, cidade: str, loja_nome: str):
     sess = requests.Session()
     sess.headers.update({
         "User-Agent": "Mozilla/5.0",
-        "Referer": driver.current_url,  # ajuda quando o host valida origem
+        "Referer": driver.current_url, 
     })
 
     vistos = set()
@@ -154,7 +150,6 @@ def baixar_encartes(uf: str, cidade: str, loja_nome: str):
         except Exception as e:
             print(f"Erro ao baixar {url}: {e}")
 
-# =============================== MAIN ========================================
 try:
     driver.get(BASE_URL)
     clicar_confirmar()

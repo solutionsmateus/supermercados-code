@@ -10,23 +10,18 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://frangolandia.com/encartes/"
 
-# === SAÍDA PADRONIZADA (usa env OUTPUT_DIR; fallback ./Encartes/Frangolandia) ===
 BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 ENCARTE_DIR = BASE_OUTPUT / "Frangolandia"
 ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[frangolandia.py] Pasta base de saída: {ENCARTE_DIR}")
 
-# ========= CHROME HEADLESS =========
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
-    # preferências (PDFs, se houver)
     prefs = {
         "download.prompt_for_download": False,
         "plugins.always_open_pdf_externally": True
     }
     options.add_experimental_option("prefs", prefs)
-
-    # headless e flags de CI
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--no-sandbox")
@@ -48,7 +43,6 @@ def slugify(txt: str) -> str:
     return txt[:80] or "sem_data"
 
 def encontrar_data():
-    # Exemplo de busca por textos na página (ajuste se precisar)
     try:
         enc_data = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located(
@@ -85,7 +79,6 @@ def processar_encartes(links):
             print(f"\nAcessando: {url}")
             time.sleep(3)
 
-            # Tenta clicar itens da galeria (lightbox/carrossel), quando existir
             galeria_itens = driver.find_elements(
                 By.CSS_SELECTOR, "a.e-gallery-item.elementor-gallery-item.elementor-animated-content"
             )
@@ -98,7 +91,6 @@ def processar_encartes(links):
                 except Exception as click_err:
                     print(f" Falha ao clicar no item da galeria: {click_err}")
 
-            # Seleciona imagens do uploads (ano flexível: qualquer /uploads/20xx/)
             imagens = driver.find_elements(By.CSS_SELECTOR, "img[src*='uploads/20']")
             if not imagens:
                 print(" Nenhuma imagem de encarte encontrada.")
@@ -113,7 +105,6 @@ def processar_encartes(links):
                 src = img.get_attribute("src")
                 caminho = pasta_destino / f"{nome_base}_{i}.jpg"
 
-                # Tenta baixar direto
                 baixou = False
                 if src:
                     try:
@@ -128,7 +119,6 @@ def processar_encartes(links):
                     except Exception as req_err:
                         print(f" Erro no download de {src}: {req_err}")
 
-                # Fallback: screenshot do elemento visível
                 if not baixou:
                     try:
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", img)
