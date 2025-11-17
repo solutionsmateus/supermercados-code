@@ -1,13 +1,13 @@
 import os
 import time
 import requests
+import re
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
-import re
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 LOJAS_ESTADOS = {
@@ -28,9 +28,10 @@ REGIAO_POR_ESTADO = {
 
 BASE_URL = "https://www.assai.com.br/ofertas"
 
-# Define o diretório de saída para os prints
+# Define o diretório de saída
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/github/workspace/encartes"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+print(f"[assai.py] Pasta de saída: {OUTPUT_DIR}")
 
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
@@ -61,6 +62,7 @@ def encontrar_data():
         for div in enc_data:
             texto = div.text.strip()
             if texto:
+                # Remove caracteres especiais e espaços para nomear a pasta
                 return re.sub(r'[\\/*?:"<>|\s]', '_', texto)
     except:
         pass
@@ -88,70 +90,98 @@ def select_by_visible_text_contains(select_el, target_text):
             return True
     return False
 
-def tirar_print_encartes(jornal_num, save_dir, loja_nome):
+def baixar_encartes(jornal_num, download_dir):
     """
-    Navega pelo carrossel de encartes e tira uma captura de tela
-    da div do encarte visível a cada página.
+    Navega pelo carrossel de encartes, extrai o link de download 
+    da imagem visível e baixa usando requests (mesma lógica do Atacadão).
     """
     page_num = 1
+    downloaded_urls = set()
     
-    # Seletor para a div do encarte visível
-    ENVELOPE_SELETOR = "div.ofertas-slider"
-    ENCARTE_VISIVEL_SELETOR = "div.slick-slide.slick-current.slick-active"
-
-    try:
-        envelope_el = aguardar_elemento(ENVELOPE_SELETOR, timeout=30)
-    except TimeoutException:
-        print("  [ERRO] Não foi possível encontrar o carrossel de ofertas.")
-        return
+    # Prepara a sessão de requests
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0",
+        "Referer": driver.current_url, 
+    })
 
     while True:
-        print(f"  Tirando print da página {page_num} do jornal {jornal_num}...")
-        
-        # 1. Encontra o elemento específico (div) do encarte ativo
-        try:
-            encarte_el = envelope_el.find_element(By.CSS_SELECTOR, ENCARTE_VISIVEL_SELETOR)
-        except NoSuchElementException:
-            print("  [FIM] Não foi possível encontrar o slide ativo. Fim do carrossel.")
-            break
+        print(f"  Buscando e baixando página {page_num} do jornal {jornal_num}...")
 
-        # Rola o elemento para o centro da tela antes de tirar a print para garantir a visibilidade
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", encarte_el)
-        time.sleep(1) # Tempo para a rolagem e renderização final
-
-        # 2. Tira o print do elemento
-        ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
-        filename = f"{loja_nome}_jornal_{jornal_num}_pagina_{page_num}_{ts}.png"
-        path = save_dir / filename
+        # O link do encarte é sempre o <a> dentro do slick-slide ativo
+        LINK_XPATH = """
+            //div[contains(@class, 'slick-slide') and contains(@class, 'slick-active')][1]//a[
+                contains(@href, 'campanha') and 
+                (contains(@href, '.jpeg') or contains(@href, '.jpg'))
+            ]
+        """
         
         try:
-            # Captura de tela focada no elemento
-            encarte_el.screenshot(str(path))
-            print(f"    [PRINT] {path.name} salvo.")
-        except Exception as e:
-            print(f"    [ERRO] Falha ao tirar print da página {page_num}: {e}")
+            # Pega o link do encarte VISÍVEL no momento
+            link_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, LINK_XPATH))
+            )
+            url = link_element.get_attribute("href")
             
-        # 3. Tenta ir para o próximo slide
+        except TimeoutException:
+            if page_num > 1:
+                print("  Nenhum link de encarte ativo encontrado. Fim do carrossel.")
+                break
+            else:
+                print("  [ERRO] Não foi possível encontrar o primeiro encarte ativo.")
+                break
+
+        if url and url not in downloaded_urls:
+            downloaded_urls.add(url)
+            
+            # --- Lógica de Download Direto ---
+            try:
+                # Tenta extrair a ID do encarte
+                match_id = re.search(r'campanha-(\d+)-', url)
+                id_encarte = match_id.group(1) if match_id else f"j{jornal_num}p{page_num}"
+                
+                # Determina a extensão
+                ext = ".jpeg" if "jpeg" in url.lower() else ".jpg"
+                filename = f"encarte_{id_encarte}_pagina_{page_num}{ext}"
+                path = download_dir / filename
+
+                resp = sess.get(url, timeout=20)
+                resp.raise_for_status() # Lança exceção se o status for erro
+
+                with open(path, "wb") as f:
+                    f.write(resp.content)
+                print(f"    [BAIXADO] {path.name}")
+                
+            except Exception as e:
+                print(f"    [Erro] Falha ao baixar {url}: {e}")
+            # -----------------------------------------------------
+
+        # 2. Tenta ir para o próximo slide
         try:
             # O botão next fica FORA da div do slide
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
             
-            # Garante que o botão está visível/clicável
+            if "slick-disabled" in next_btn.get_attribute("class"):
+                print("  Botão Next desabilitado. Fim do carrossel.")
+                break
+
+            # Garante que o botão está visível/clicável e clica
             driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
             time.sleep(0.5)
-            
-            # Clica no botão para o próximo encarte
             driver.execute_script("arguments[0].click();", next_btn)
 
-            # Aguarda a transição para o próximo slide
-            time.sleep(2.5) 
+            # Aguarda o próximo slide se tornar ativo (usando o data-slick-index)
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.XPATH, f"//div[contains(@class, 'slick-slide') and contains(@class, 'slick-active') and @data-slick-index='{page_num}']"))
+            )
+            time.sleep(2.0) # Tempo extra para renderização
             page_num += 1
 
-        except NoSuchElementException:
-            print("  [FIM] Botão Next desabilitado ou não encontrado. Fim do carrossel.")
+        except (NoSuchElementException, TimeoutException) as e:
+            print(f"  Fim do carrossel ou erro ao navegar: {e}")
             break
         except Exception as e:
-            print(f"  [FIM] Erro ao avançar o carrossel: {e}")
+            print(f"  Erro inesperado ao avançar o carrossel: {e}")
             break
     
 try:
@@ -169,7 +199,6 @@ try:
     time.sleep(1)
 
     for estado, loja in LOJAS_ESTADOS.items():
-        # Define o nome da loja seguro para o diretório
         nome_loja = re.sub(r'[\\/*?:"<>|\s]', '_', loja)
         
         print(f"\n--- Processando: {estado} - {loja} ---")
@@ -212,7 +241,7 @@ try:
         download_dir.mkdir(parents=True, exist_ok=True)
 
         # 6. Processa o primeiro jornal (padrão)
-        tirar_print_encartes(1, download_dir, nome_loja)
+        baixar_encartes(1, download_dir)
 
         # 7. Processa outros jornais (se houver botões)
         for i in range(2, 4):
@@ -220,7 +249,7 @@ try:
                 clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
                 time.sleep(3)
                 aguardar_elemento("div.ofertas-slider", timeout=30)
-                tirar_print_encartes(i, download_dir, nome_loja)
+                baixar_encartes(i, download_dir)
             except Exception as e:
                 print(f"  Jornal {i} não disponível: {e}")
 
@@ -236,7 +265,7 @@ try:
 except Exception as e:
     print(f"\nERRO CRÍTICO: {e}")
     try:
-        # Tira screenshot da tela inteira em caso de erro crítico
+        # Tira screenshot da tela inteira em caso de erro crítico para debug
         screenshot_path = OUTPUT_DIR / "ERRO_assai_tela_cheia.png"
         driver.save_screenshot(str(screenshot_path))
         print(f"  Screenshot de erro salvo: {screenshot_path}")
