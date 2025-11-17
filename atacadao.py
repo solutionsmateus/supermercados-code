@@ -139,7 +139,13 @@ def baixar_encartes(uf: str, cidade: str, loja_nome: str):
             continue
         vistos.add(url)
 
-        nome_arquivo = f"encarte{i}.pdf"
+        match_id = re.search(r'id=(\d+)', url)
+        if match_id:
+            encarte_id = match_id.group(1)
+            nome_arquivo = f"encarte_{encarte_id}.pdf"
+        else:
+            nome_arquivo = f"encarte{i}.pdf"
+        
         caminho = pasta_destino / nome_arquivo
         try:
             r = sess.get(url, timeout=40)
