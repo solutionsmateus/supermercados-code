@@ -139,7 +139,7 @@ def baixar_encartes(uf: str, cidade: str, loja_nome: str):
             continue
         vistos.add(url)
 
-        nome_arquivo = f"encarte{url}.pdf"
+        nome_arquivo = f"encarte{i}.pdf"
         caminho = pasta_destino / nome_arquivo
         try:
             r = sess.get(url, timeout=40)
