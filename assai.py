@@ -1,6 +1,5 @@
 import os
 import time
-import requests
 import re
 from pathlib import Path
 from selenium import webdriver
@@ -40,7 +39,8 @@ def build_headless_chrome():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-features=VizDisplayCompositor")
-    options.add_argument("--window-size=1920,1080")
+    # Aumentei um pouco a altura para garantir que o print pegue o encarte todo sem cortes
+    options.add_argument("--window-size=1920,1200")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     options.add_argument("--lang=pt-BR,pt")
     return webdriver.Chrome(options=options)
@@ -62,25 +62,21 @@ def encontrar_data():
         for div in enc_data:
             texto = div.text.strip()
             if texto:
-                # Remove caracteres especiais e espaços para nomear a pasta
                 return re.sub(r'[\\/*?:"<>|\s]', '_', texto)
     except:
         pass
     return "sem_data"
 
 def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=15):
-    """Aguarda um elemento estar presente no DOM."""
     return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((by, seletor)))
 
 def clicar_elemento(seletor, by=By.CSS_SELECTOR, timeout=30):
-    """Aguarda um elemento ser clicável e o clica via JavaScript."""
     element = WebDriverWait(driver, timeout).until(EC.element_to_be_clickable((by, seletor)))
     driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", element)
     time.sleep(0.5)
     driver.execute_script("arguments[0].click();", element)
 
 def select_by_visible_text_contains(select_el, target_text):
-    """Seleciona uma opção em um <select> cujo texto visível contenha o texto alvo."""
     sel = Select(select_el)
     opts = select_el.find_elements(By.TAG_NAME, "option")
     alvo = target_text.strip().lower()
@@ -92,109 +88,80 @@ def select_by_visible_text_contains(select_el, target_text):
 
 def baixar_encartes(jornal_num, download_dir):
     """
-    Navega pelo carrossel de encartes, extrai o link de download 
-    da imagem visível e baixa usando requests (mesma lógica do Atacadão).
+    Navega pelo carrossel e tira um SCREENSHOT da DIV ativa do encarte.
     """
     page_num = 1
-    downloaded_urls = set()
     
-    # Prepara a sessão de requests
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": "Mozilla/5.0",
-        "Referer": driver.current_url, 
-    })
-
     while True:
-        print(f"  Buscando e baixando página {page_num} do jornal {jornal_num}...")
+        print(f"  Processando (Screenshot) página {page_num} do jornal {jornal_num}...")
 
-        # O link do encarte é sempre o <a> dentro do slick-slide ativo
-        LINK_XPATH = """
-            //div[contains(@class, 'slick-slide') and contains(@class, 'slick-active')][1]//a[
-                contains(@href, 'campanha') and 
-                (contains(@href, '.jpeg') or contains(@href, '.jpg'))
-            ]
-        """
+        # Seletor da DIV container do slide ativo.
+        # Esta DIV contém a imagem e a borda/layout que você quer capturar.
+        SLIDE_ATIVO_XPATH = "//div[contains(@class, 'slick-slide') and contains(@class, 'slick-active')]"
         
         try:
-            # Pega o link do encarte VISÍVEL no momento
-            link_element = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, LINK_XPATH))
+            # 1. Localiza o elemento DIV ativo
+            div_encarte = WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.XPATH, SLIDE_ATIVO_XPATH))
             )
-            url = link_element.get_attribute("href")
             
+            # Pequena pausa para garantir que a imagem dentro da div carregou completamente
+            time.sleep(2) 
+            
+            # Define o nome do arquivo
+            filename = f"encarte_j{jornal_num}_pagina_{page_num}.png"
+            path = download_dir / filename
+            
+            # 2. Tira o screenshot APENAS dessa DIV
+            div_encarte.screenshot(str(path))
+            print(f"    [SCREENSHOT SALVO] {path.name}")
+
         except TimeoutException:
             if page_num > 1:
-                print("  Nenhum link de encarte ativo encontrado. Fim do carrossel.")
+                print("  Nenhum slide ativo encontrado. Fim do carrossel.")
                 break
             else:
-                print("  [ERRO] Não foi possível encontrar o primeiro encarte ativo.")
+                print("  [ERRO] Não foi possível encontrar o primeiro slide ativo.")
                 break
+        except Exception as e:
+             print(f"    [Erro] Falha ao tirar screenshot: {e}")
 
-        if url and url not in downloaded_urls:
-            downloaded_urls.add(url)
-            
-            # --- Lógica de Download Direto ---
-            try:
-                # Tenta extrair a ID do encarte
-                match_id = re.search(r'campanha-(\d+)-', url)
-                id_encarte = match_id.group(1) if match_id else f"j{jornal_num}p{page_num}"
-                
-                # Determina a extensão
-                ext = ".jpeg" if "jpeg" in url.lower() else ".jpg"
-                filename = f"encarte_{id_encarte}_pagina_{page_num}{ext}"
-                path = download_dir / filename
-
-                resp = sess.get(url, timeout=20)
-                resp.raise_for_status() # Lança exceção se o status for erro
-
-                with open(path, "wb") as f:
-                    f.write(resp.content)
-                print(f"    [BAIXADO] {path.name}")
-                
-            except Exception as e:
-                print(f"    [Erro] Falha ao baixar {url}: {e}")
-            # -----------------------------------------------------
-
-        # 2. Tenta ir para o próximo slide
+        # 3. Tenta ir para o próximo slide
         try:
-            # O botão next fica FORA da div do slide
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
             
             if "slick-disabled" in next_btn.get_attribute("class"):
                 print("  Botão Next desabilitado. Fim do carrossel.")
                 break
 
-            # Garante que o botão está visível/clicável e clica
             driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
             time.sleep(0.5)
             driver.execute_script("arguments[0].click();", next_btn)
 
-            # Aguarda o próximo slide se tornar ativo (usando o data-slick-index)
+            # Aguarda o slide atual mudar de índice (lógica para garantir transição)
             WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, f"//div[contains(@class, 'slick-slide') and contains(@class, 'slick-active') and @data-slick-index='{page_num}']"))
             )
-            time.sleep(2.0) # Tempo extra para renderização
+            # Pausa extra para a animação do carrossel terminar antes do próximo print
+            time.sleep(1.5) 
             page_num += 1
 
-        except (NoSuchElementException, TimeoutException) as e:
-            print(f"  Fim do carrossel ou erro ao navegar: {e}")
+        except (NoSuchElementException, TimeoutException):
+            print(f"  Fim do carrossel (botão next não encontrado ou timeout).")
             break
         except Exception as e:
             print(f"  Erro inesperado ao avançar o carrossel: {e}")
             break
-    
+
 try:
     driver.get(BASE_URL)
     time.sleep(3)
 
     try:
-        # Tenta fechar o pop-up de cookies, se houver
         clicar_elemento("button.ot-close-icon", timeout=5)
     except:
         pass
 
-    # Clica no seletor de loja
     clicar_elemento("a.seletor-loja")
     time.sleep(1)
 
@@ -203,12 +170,10 @@ try:
         
         print(f"\n--- Processando: {estado} - {loja} ---")
 
-        # 1. Seleção de Estado
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
         time.sleep(1)
 
-        # 2. Seleção de Região (se aplicável)
         if estado in REGIAO_POR_ESTADO:
             try:
                 regiao_select = aguardar_elemento("select.regiao", timeout=15)
@@ -218,7 +183,6 @@ try:
             except Exception as e:
                 print(f"  Região não selecionada: {e}")
 
-        # 3. Seleção de Loja
         loja_select = aguardar_elemento("select.loja", timeout=20)
         try:
             Select(loja_select).select_by_visible_text(loja)
@@ -227,33 +191,29 @@ try:
                 raise RuntimeError(f"Loja não encontrada: {loja}")
 
         time.sleep(0.8)
-
-        # 4. Confirmação
         clicar_elemento("button.confirmar")
         time.sleep(3)
 
-        # 5. Define diretório de saída e nome da data
         aguardar_elemento("div.ofertas-slider", timeout=30)
         data_nome = encontrar_data()
         
-        # Cria a pasta de saída baseada na loja e na data
         download_dir = OUTPUT_DIR / f"encartes_{nome_loja}_{data_nome}"
         download_dir.mkdir(parents=True, exist_ok=True)
 
-        # 6. Processa o primeiro jornal (padrão)
         baixar_encartes(1, download_dir)
 
-        # 7. Processa outros jornais (se houver botões)
         for i in range(2, 4):
             try:
-                clicar_elemento(f"//button[contains(., 'Jornal de Ofertas {i}')]", By.XPATH)
-                time.sleep(3)
-                aguardar_elemento("div.ofertas-slider", timeout=30)
-                baixar_encartes(i, download_dir)
+                # Verifica se o botão do jornal extra existe antes de tentar clicar
+                btn_xpath = f"//button[contains(., 'Jornal de Ofertas {i}')]"
+                if driver.find_elements(By.XPATH, btn_xpath):
+                    clicar_elemento(btn_xpath, By.XPATH)
+                    time.sleep(3)
+                    aguardar_elemento("div.ofertas-slider", timeout=30)
+                    baixar_encartes(i, download_dir)
             except Exception as e:
-                print(f"  Jornal {i} não disponível: {e}")
+                print(f"  Jornal {i} não processado: {e}")
 
-        # 8. Retorna para o seletor de loja para o próximo loop
         try:
             clicar_elemento("a.seletor-loja")
             time.sleep(2)
@@ -265,7 +225,6 @@ try:
 except Exception as e:
     print(f"\nERRO CRÍTICO: {e}")
     try:
-        # Tira screenshot da tela inteira em caso de erro crítico para debug
         screenshot_path = OUTPUT_DIR / "ERRO_assai_tela_cheia.png"
         driver.save_screenshot(str(screenshot_path))
         print(f"  Screenshot de erro salvo: {screenshot_path}")
