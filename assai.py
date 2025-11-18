@@ -88,69 +88,81 @@ def select_by_visible_text_contains(select_el, target_text):
 
 def baixar_encartes(jornal_num, download_dir):
     """
-    Navega pelo carrossel e tira um SCREENSHOT da DIV ativa do encarte.
+    Navega pelo carrossel, aguarda a IMAGEM carregar de verdade e tira screenshot.
     """
     page_num = 1
     
     while True:
-        print(f"  Processando (Screenshot) página {page_num} do jornal {jornal_num}...")
+        print(f"  Processando página {page_num} do jornal {jornal_num}...")
 
-        # Seletor da DIV container do slide ativo.
-        # Esta DIV contém a imagem e a borda/layout que você quer capturar.
+        # XPath da DIV ativa
         SLIDE_ATIVO_XPATH = "//div[contains(@class, 'slick-slide') and contains(@class, 'slick-active')]"
         
         try:
-            # 1. Localiza o elemento DIV ativo
-            div_encarte = WebDriverWait(driver, 10).until(
+            # 1. Aguarda a DIV aparecer
+            div_encarte = WebDriverWait(driver, 15).until(
                 EC.visibility_of_element_located((By.XPATH, SLIDE_ATIVO_XPATH))
             )
+
+            # 2. Encontra a tag <IMG> dentro dessa div ativa
+            img_element = WebDriverWait(div_encarte, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "img"))
+            )
+
+            # 3. Scroll para o CENTRO da tela (ajuda a disparar o carregamento da imagem)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center'});", img_element)
             
-            # Pequena pausa para garantir que a imagem dentro da div carregou completamente
-            time.sleep(2) 
+            # 4. TRUQUE CRUCIAL: Espera até que a imagem tenha 'naturalWidth' > 0
+            # Isso garante que o arquivo da imagem foi baixado pelo navegador e renderizado.
+            WebDriverWait(driver, 15).until(
+                lambda d: img_element.get_attribute("naturalWidth") and int(img_element.get_attribute("naturalWidth")) > 0
+            )
+
+            # Pequena pausa de segurança após a imagem renderizar
+            time.sleep(1.5)
             
-            # Define o nome do arquivo
+            # 5. Tira o screenshot da DIV (que agora contém a imagem carregada)
             filename = f"encarte_j{jornal_num}_pagina_{page_num}.png"
             path = download_dir / filename
             
-            # 2. Tira o screenshot APENAS dessa DIV
             div_encarte.screenshot(str(path))
-            print(f"    [SCREENSHOT SALVO] {path.name}")
+            print(f"    [SUCESSO] {path.name}")
 
         except TimeoutException:
             if page_num > 1:
-                print("  Nenhum slide ativo encontrado. Fim do carrossel.")
+                print("  Nenhum slide ativo ou imagem não carregou. Fim do carrossel.")
                 break
             else:
-                print("  [ERRO] Não foi possível encontrar o primeiro slide ativo.")
-                break
+                print("  [ERRO] Primeira página não carregou. Tentando próxima...")
+                # Tenta continuar mesmo se falhar a primeira, ou pode dar break se preferir
+                pass
         except Exception as e:
-             print(f"    [Erro] Falha ao tirar screenshot: {e}")
+             print(f"    [Erro] Falha ao processar página: {e}")
 
-        # 3. Tenta ir para o próximo slide
+        # --- Navegação para o próximo slide ---
         try:
+            # Procura botão 'Próximo'
             next_btn = driver.find_element(By.CSS_SELECTOR, "button.slick-next:not(.slick-disabled)")
             
             if "slick-disabled" in next_btn.get_attribute("class"):
-                print("  Botão Next desabilitado. Fim do carrossel.")
+                print("  Botão Next desabilitado. Fim.")
                 break
 
-            driver.execute_script("arguments[0].scrollIntoView({block: 'nearest', inline: 'nearest'});", next_btn)
-            time.sleep(0.5)
+            # Clica no botão
             driver.execute_script("arguments[0].click();", next_btn)
 
-            # Aguarda o slide atual mudar de índice (lógica para garantir transição)
-            WebDriverWait(driver, 20).until(
+            # Aguarda a troca do índice do slide (importante para não tirar foto repetida)
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH, f"//div[contains(@class, 'slick-slide') and contains(@class, 'slick-active') and @data-slick-index='{page_num}']"))
             )
-            # Pausa extra para a animação do carrossel terminar antes do próximo print
-            time.sleep(1.5) 
+            
             page_num += 1
 
         except (NoSuchElementException, TimeoutException):
-            print(f"  Fim do carrossel (botão next não encontrado ou timeout).")
+            print(f"  Fim do carrossel.")
             break
         except Exception as e:
-            print(f"  Erro inesperado ao avançar o carrossel: {e}")
+            print(f"  Erro na navegação: {e}")
             break
 
 try:
