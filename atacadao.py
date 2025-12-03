@@ -23,6 +23,10 @@ LOJAS_ESTADOS = {
     "PB": ("João Pessoa", "João Pessoa Bessa"),
     "PE": ("Recife", "Recife Avenida Recife"),
     "PI": ("Teresina", "Teresina Primavera"),
+    "BA": (
+        ("Salvador", "Salvador Garibaldi"),
+        ("Vitória Da Conquista", "Vitória da Conquista"),
+    ),
     "SE": ("Aracaju", "Aracaju Tancredo Neves"),
     "BA": ("Vitória Da Conquista", "Vitória da Conquista"),
     "MA": ("São Luís", "São Luís"),

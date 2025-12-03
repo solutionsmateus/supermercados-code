@@ -9,6 +9,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from datetime import datetime
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+# --- ALTERAÇÃO 1: NOVAS ESTRUTURAS DE DADOS ---
+
+# LOJAS_ESTADOS agora tem estrutura mista: 
+# - string para estados simples
+# - dicionário aninhado para a Bahia (Estado -> Região -> Loja)
 LOJAS_ESTADOS = {
     "Maranhão": "Assaí Angelim",
     "Alagoas": "Assaí Maceió Farol",
@@ -18,12 +23,14 @@ LOJAS_ESTADOS = {
     "Pernambuco": "Assaí Avenida Recife",
     "Piauí": "Assaí Teresina",
     "Sergipe": "Assaí Aracaju",
-    "Bahia": "Assaí Vitória da Conquista",
+    # EXCEÇÃO DA BAHIA: mapeia para um dicionário de regiões/lojas
+    "Bahia": {
+        "Capital": "Assaí Salvador Paralela",
+        "Interior": "Assaí Vitória da Conquista",
+    }
 }
 
-REGIAO_POR_ESTADO = {
-    "Bahia": "Interior",
-}
+# REGIAO_POR_ESTADO foi REMOVIDO, pois a lógica de região será embutida no loop.
 
 BASE_URL = "https://www.assai.com.br/ofertas"
 
@@ -177,28 +184,49 @@ try:
     clicar_elemento("a.seletor-loja")
     time.sleep(1)
 
-    for estado, loja in LOJAS_ESTADOS.items():
+    # --- ALTERAÇÃO 2: NOVA LÓGICA DE ITERAÇÃO E SELEÇÃO ---
+    
+    # Lista de tuplas para iterar: (Estado, Região, Nome da Loja)
+    lojas_para_processar = []
+    
+    for estado, lojas in LOJAS_ESTADOS.items():
+        if isinstance(lojas, dict):
+            # Se for a Bahia (ou outro estado com divisão de região)
+            for regiao, nome_loja in lojas.items():
+                lojas_para_processar.append((estado, regiao, nome_loja))
+        else:
+            # Se for um estado normal (string)
+            lojas_para_processar.append((estado, None, lojas))
+
+    for estado, regiao, loja in lojas_para_processar:
+        # A variável 'loja' agora é o nome completo da loja (ex: "Assaí Salvador Paralela")
         nome_loja = re.sub(r'[\\/*?:"<>|\s]', '_', loja)
         
         print(f"\n--- Processando: {estado} - {loja} ---")
 
+        # 1. Seleção do Estado
         estado_select = aguardar_elemento("select.estado")
         Select(estado_select).select_by_visible_text(estado)
         time.sleep(1)
 
-        if estado in REGIAO_POR_ESTADO:
+        # 2. Seleção da Região (APENAS se for o caso, ou seja, se 'regiao' não for None)
+        if regiao:
             try:
                 regiao_select = aguardar_elemento("select.regiao", timeout=15)
-                Select(regiao_select).select_by_visible_text(REGIAO_POR_ESTADO[estado])
+                # Seleciona a região (ex: "Capital" ou "Interior")
+                Select(regiao_select).select_by_visible_text(regiao)
                 aguardar_elemento("select.loja option[value]", timeout=20)
                 time.sleep(0.5)
             except Exception as e:
-                print(f"  Região não selecionada: {e}")
-
+                print(f"  Aviso: Região '{regiao}' não selecionada: {e}")
+        
+        # 3. Seleção da Loja
         loja_select = aguardar_elemento("select.loja", timeout=20)
         try:
+            # Tenta selecionar pelo nome exato
             Select(loja_select).select_by_visible_text(loja)
         except:
+            # Tenta selecionar se o nome contiver o texto (melhor robustez)
             if not select_by_visible_text_contains(loja_select, loja):
                 raise RuntimeError(f"Loja não encontrada: {loja}")
 
