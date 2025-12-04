@@ -242,7 +242,7 @@ try:
 
         baixar_encartes(1, download_dir)
 
-        for i in range(2, 4):
+        for i in range(2, 6):
             try:
                 # Verifica se o botão do jornal extra existe antes de tentar clicar
                 btn_xpath = f"//button[contains(., 'Jornal de Ofertas {i}')]"
