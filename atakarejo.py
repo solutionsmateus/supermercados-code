@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 BASE_OUTPUT = Path(os.environ.get("OUTPUT_DIR", str(Path.cwd() / "Encartes"))).resolve()
 ENCARTE_DIR = BASE_OUTPUT / "Atakarejo"
 ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
-print(f"📦 [atakarejo.py] Pasta base de saída: {ENCARTE_DIR}")
+print(f"Pasta base de saída: {ENCARTE_DIR}")
 
 CIDADES_ALVO = [
     {
