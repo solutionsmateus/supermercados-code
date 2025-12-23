@@ -9,13 +9,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 from io import BytesIO
 
-# === CONFIGURAÇÃO DE REDIMENSIONAMENTO ===
+
 RESIZE_FACTOR = 2 # Este é o fator que dobra a resolução (2x)
 
-# === CONFIGURAÇÃO DOS RECORTES (COORDENADAS E DIMENSÕES EXATAS) ===
-
-# 1. Recorte Padrão (Para Páginas 1, 2, 4 e outras não-3)
-# Dimensão: 626 x 853. Posição: 648, 17
 CROP_PADRAO = [{
     "width": 626,
     "height": 853, 
@@ -24,8 +20,7 @@ CROP_PADRAO = [{
     "suffix": ""
 }]
 
-# 2. Recorte Spread (APENAS PARA A PÁGINA 3)
-# Dimensão: 1226 x 842. Posição: 348, 22
+
 CROP_SPREAD_UNICO = [{
     "width": 1226,
     "height": 842,
