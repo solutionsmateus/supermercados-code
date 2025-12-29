@@ -113,7 +113,9 @@ def baixar_encartes(uf, cidade, loja_nome):
             caminho = pasta_destino / nome_arquivo
 
             try:
-                response = requests.get(url, timeout=15)
+                # O requests.get não está usando o User-Agent definido no YAML. Se precisar disso,
+                # você teria que passar o User-Agent do ambiente como um header aqui.
+                response = requests.get(url, timeout=15) 
                 with open(caminho, "wb") as f:
                     f.write(response.content)
                 print(f" Baixado: {nome_arquivo}")
