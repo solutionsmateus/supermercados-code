@@ -12,18 +12,18 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # Novo formato: {UF: [(Cidade, Nome da Loja), ...]}
 LOJAS_ESTADOS = {
-    "MA": [("São Luís", "São Luís")],
+    "PA": [("Belém", "Belém Portal da Amazônia")],
+    "PE": [("Recife", "Recife Avenida Recife")],
     "BA": [
         ("Salvador", "Salvador Garibaldi"),
         ("Vitória Da Conquista", "Vitória da Conquista Brumado")
     ],
     "AL": [("Maceió", "Maceió Praia")],
+    "MA": [("São Luís", "São Luís")],
     "CE": [("Fortaleza", "Fortaleza Fátima")],
-    "PA": [("Belém", "Belém Portal da Amazônia")],
-    "PB": [("João Pessoa", "João Pessoa Bessa")],
-    "PE": [("Recife", "Recife Avenida Recife")],
     "PI": [("Teresina", "Teresina Primavera")],
-    "SE": [("Aracaju", "Aracaju Tancredo Neves")]
+    "SE": [("Aracaju", "Aracaju Tancredo Neves")],
+    "PB": [("João Pessoa", "João Pessoa Bessa")]
 }
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
