@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import re
 import time
@@ -140,7 +141,7 @@ try:
 
             if nome_loja_encontrada:
                 baixar_encartes(uf, cidade, nome_loja_encontrada)
-                time.sleep(1)
+                time.sleep(2)
 
 except Exception as e:
     print(f" Erro geral: {e}")
