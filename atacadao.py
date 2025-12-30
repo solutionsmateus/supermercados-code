@@ -41,7 +41,7 @@ wait = WebDriverWait(driver, 20)
 
 def encontrar_data():
     try:
-        enc_data = WebDriverWait(driver, 10).until(
+        enc_data = WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.XPATH, '//p[contains(@class, "text-xs text-neutral-400")]'))
         )
     except:
@@ -67,9 +67,9 @@ def clicar_confirmar():
 def selecionar_uf_cidade(uf, cidade):
     # O tempo de espera foi aumentado para garantir que os selects carreguem
     Select(wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[96px]')]")))).select_by_value(uf)
-    time.sleep(2) # Espera um pouco mais
+    time.sleep(4) # Espera um pouco mais
     Select(wait.until(EC.presence_of_element_located((By.XPATH, "//select[contains(@class, 'md:w-[360px]')]")))).select_by_visible_text(cidade)
-    time.sleep(2) # Espera um pouco mais
+    time.sleep(4) # Espera um pouco mais
 
 def clicar_loja_por_nome(loja_nome):
     wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "[data-testid='store-card']")))
@@ -92,7 +92,7 @@ def baixar_encartes(uf, cidade, loja_nome):
     print("Buscando encartes...")
 
     try:
-        time.sleep(2)
+        time.sleep(4)
         links = driver.find_elements(By.XPATH, "//a[contains(@href, 'Flyer/?id=')]")
 
         if not links:
@@ -135,7 +135,7 @@ try:
             print(f"\n Estado: {uf} | Cidade: {cidade} | Loja: {loja_nome}")
             # Recarrega a página base para garantir que os selects sejam redefinidos
             driver.get(BASE_URL)
-            time.sleep(2)
+            time.sleep(4)
             clicar_confirmar()
 
             selecionar_uf_cidade(uf, cidade)
@@ -143,7 +143,7 @@ try:
 
             if nome_loja_encontrada:
                 baixar_encartes(uf, cidade, nome_loja_encontrada)
-                time.sleep(2)
+                time.sleep(4)
 
 except Exception as e:
     print(f" Erro geral: {e}")
