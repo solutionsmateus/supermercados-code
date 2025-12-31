@@ -59,13 +59,12 @@ def iniciar_driver():
         "safebrowsing.enabled": True
     }
     options.add_experimental_option("prefs", prefs)
-    return webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(options=options)
+    driver.set_page_load_timeout(60) # Adicione esta linha!
+    return driver
+
 
 def obter_numero_e_tipo_pagina(wait: WebDriverWait) -> tuple[int, bool]:
-    """
-    Lê o label da página (ex: '2-3 / 4') para retornar o número da primeira página 
-    e se é um spread (página dupla).
-    """
     try:
         page_label = wait.until(
             EC.presence_of_element_located((
@@ -76,7 +75,6 @@ def obter_numero_e_tipo_pagina(wait: WebDriverWait) -> tuple[int, bool]:
         texto = page_label.text.split('/')[0].strip()
         
         if '-' in texto:
-            # Spread (ex: "2-3")
             primeira_pagina = int(texto.split('-')[0].strip())
             is_spread = True
         else:
@@ -90,9 +88,6 @@ def obter_numero_e_tipo_pagina(wait: WebDriverWait) -> tuple[int, bool]:
         raise Exception(f"Não foi possível determinar o número da página/tipo. Detalhe: {e}")
 
 def cortar_e_salvar_screenshot(pasta_destino: Path, nome_base: str, crop_settings):
-    """
-    Captura a tela inteira, aplica o corte, redimensiona em 2x e salva.
-    """
     try:
         png = driver.get_screenshot_as_png()
         img = Image.open(BytesIO(png))
@@ -142,7 +137,6 @@ def processar_encartes():
         try:
             print(f"\nProcessando encarte {i + 1} de {total}")
 
-            # Recarrega a página e encontra o encarte novamente (evita stale element)
             driver.get(BASE_URL)
             time.sleep(7)
             encartes = driver.find_elements(
