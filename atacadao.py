@@ -15,7 +15,6 @@ ENCARTE_DIR = BASE_OUTPUT / "Atacadao"
 ENCARTE_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[atacadao.py] Pasta de saída: {ENCARTE_DIR}")
 
-# Novo formato: {UF: [(Cidade, Nome da Loja), ...]}
 LOJAS_ESTADOS = {
     "PA": [("Belém", "Belém Portal da Amazônia")],
     "PE": [("Recife", "Recife Avenida Recife")],
@@ -33,10 +32,6 @@ LOJAS_ESTADOS = {
 
 BASE_URL = "https://www.atacadao.com.br/institucional/nossas-lojas"
 
-options = webdriver.ChromeOptions()
-options.add_argument("--start-maximized")
-driver = webdriver.Chrome(options=options)
-wait = WebDriverWait(driver, 20)
 
 def strip_accents(s: str) -> str:
     if not s:
@@ -56,7 +51,6 @@ def click_robusto(driver, el) -> bool:
         except Exception:
             return False
         
-# === CHROME HEADLESS =========================================================
 def build_headless_chrome():
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -161,7 +155,7 @@ def baixar_encartes(uf: str, cidade: str, loja_nome: str):
         except Exception as e:
             print(f"Erro ao baixar {url}: {e}")
 
-# =============================== MAIN ========================================
+
 try:
     driver.get(BASE_URL)
     clicar_confirmar()
