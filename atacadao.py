@@ -160,18 +160,18 @@ try:
     driver.get(BASE_URL)
     clicar_confirmar()
 
-    for uf, (cidade, loja_nome) in LOJAS_ESTADOS.items():
-        print(f"\n Estado: {uf} | Cidade: {cidade} | Loja: {loja_nome}")
-        driver.get(BASE_URL)
-        time.sleep(1.5)
-        clicar_confirmar()
-
-        selecionar_uf_cidade(uf, cidade)
-        loja_encontrada = clicar_loja_por_nome(loja_nome)
-
-        if loja_encontrada:
-            baixar_encartes(uf, cidade, loja_encontrada)
-            time.sleep(0.5)
+    for uf, lista_lojas in LOJAS_ESTADOS.items():
+        for cidade, loja_nome in lista_lojas:
+            print(f"\n Estado: {uf} | Cidade: {cidade} | Loja: {loja_nome}")
+            driver.get(BASE_URL)
+            time.sleep(1.5)
+            clicar_confirmar()
+            selecionar_uf_cidade(uf, cidade)
+            loja_encontrada = clicar_loja_por_nome(loja_nome)
+            
+            if loja_encontrada:
+                baixar_encartes(uf, cidade, loja_encontrada)
+                time.sleep(0.5)
 
 except Exception as e:
     print(f" Erro geral: {e}")

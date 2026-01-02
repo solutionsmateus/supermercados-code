@@ -9,12 +9,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 from io import BytesIO
 
-# === CONFIGURAÇÃO DE REDIMENSIONAMENTO ===
+
 RESIZE_FACTOR = 2
 
-# === CONFIGURAÇÃO DOS RECORTES (COORDENADAS E DIMENSÕES EXATAS) ===
-
-# 1. Recorte Padrão (Página Única: 557x789 @ 681, 41)
 CROP_PADRAO = [{
     "width": 557,
     "height": 789,
