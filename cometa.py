@@ -57,7 +57,7 @@ def iniciar_driver():
     }
     options.add_experimental_option("prefs", prefs)
     driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(60) # Adicione esta linha!
+    driver.set_page_load_timeout(90) # Adicione esta linha!
     return driver
 
 
