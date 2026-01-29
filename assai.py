@@ -67,14 +67,14 @@ def aguardar_elemento(seletor, by=By.CSS_SELECTOR, timeout=15):
 def clicar_elemento(seletor, by=By.CSS_SELECTOR):
     element = wait.until(EC.element_to_be_clickable((by, seletor)))
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-    time.sleep(0.5)
+    time.sleep(1)
     element.click()
 
 def scroll_down_and_up():
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
-    time.sleep(0.5)
+    time.sleep(1)
     driver.execute_script("window.scrollTo(0, 1);")
-    time.sleep(0.5)
+    time.sleep(1)
 
 def baixar_encartes(jornal_num, download_dir):
     page_num = 1
@@ -110,7 +110,7 @@ def baixar_encartes(jornal_num, download_dir):
         try:
             next_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.slick-next")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            time.sleep(0.5)
+            time.sleep(1)
             next_button.click()
             time.sleep(2)
             page_num += 1
