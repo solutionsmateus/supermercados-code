@@ -64,7 +64,7 @@ def capturar_encarte(driver: webdriver.Chrome, state_sigla: str, page_number: in
 def baixar_estado(sigla_estado):
     print(f"\n--- Iniciando Baixando encartes do estado: {sigla_estado} ---")
     driver.get(BASE_URL)
-    time.sleep(5)
+    time.sleep(10)
 
     try:
         print(f"1. Clicando no botão do estado: {sigla_estado}")
@@ -72,7 +72,7 @@ def baixar_estado(sigla_estado):
             (By.XPATH, f'//button[text()="{sigla_estado}"]'))
         )
         botao_estado.click()
-        time.sleep(5) 
+        time.sleep(10) 
 
         print("2. Buscando e clicando no botão 'Ver Encarte'...")
         
@@ -80,7 +80,7 @@ def baixar_estado(sigla_estado):
             (By.XPATH, '//button[@class="encarte-button" and text()="Ver Encarte"]')
         ))
         ver_encarte_btn.click()
-        time.sleep(7) 
+        time.sleep(10) 
 
         print(f"3. Iniciando scroll e captura (máx. {MAX_PAGES_TO_SCROLL} páginas)...")
         
@@ -109,7 +109,7 @@ def baixar_estado(sigla_estado):
         print(f"Erro fatal durante a extração do estado {sigla_estado}: {e}")
     finally:
         driver.get(BASE_URL)
-        time.sleep(3)
+        time.sleep(10)
 
 
 if __name__ == "__main__":
