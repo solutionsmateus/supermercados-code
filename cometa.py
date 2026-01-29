@@ -57,7 +57,7 @@ def iniciar_driver():
     }
     options.add_experimental_option("prefs", prefs)
     driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(90) # Adicione esta linha!
+    driver.set_page_load_timeout(100) # Adicione esta linha!
     return driver
 
 
@@ -135,14 +135,14 @@ def processar_encartes():
             print(f"\nProcessando encarte {i + 1} de {total}")
 
             driver.get(BASE_URL)
-            time.sleep(7)
+            time.sleep(10)
             encartes = driver.find_elements(
                 By.XPATH, '//div[contains(@class, "real3dflipbook") and contains(@style, "cursor: pointer")]'
             )
 
             # Clica no encarte para abrir o visualizador
             encartes[i].click()
-            time.sleep(7)
+            time.sleep(10)
 
             nome_pasta = f"encarte_{i+1}"
             pasta_encarte = ENCARTE_DIR / nome_pasta
@@ -173,7 +173,7 @@ def processar_encartes():
                     
                     # Tenta clicar no botão de próximo
                     btn_proximo.click()
-                    time.sleep(5) # Espera a nova página carregar
+                    time.sleep(10) # Espera a nova página carregar
 
                     # 5. LÊ O NÚMERO DA PÁGINA DEPOIS DO AVANÇO
                     # Usamos um try/except interno para lidar com a possibilidade de o elemento sumir
