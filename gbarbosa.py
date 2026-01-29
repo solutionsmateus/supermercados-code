@@ -25,7 +25,7 @@ options.add_argument("--start-maximized")
 
 
 driver = webdriver.Chrome(options=options)
-wait = WebDriverWait(driver, 30) # Tempo de espera
+wait = WebDriverWait(driver, 40) # Tempo de espera
 
 
 def capturar_encarte(driver: webdriver.Chrome, state_sigla: str, page_number: int):
@@ -43,7 +43,7 @@ def capturar_encarte(driver: webdriver.Chrome, state_sigla: str, page_number: in
             
             print(f"   -- Movendo o elemento da página {page_number} para visualização...")
             driver.execute_script("arguments[0].scrollIntoView(true);", page_element)
-            time.sleep(1) 
+            time.sleep(5) 
             
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             file_name = f"GBarbosa_{state_sigla}_Pag{page_number}_{timestamp}.png"
@@ -64,7 +64,7 @@ def capturar_encarte(driver: webdriver.Chrome, state_sigla: str, page_number: in
 def baixar_estado(sigla_estado):
     print(f"\n--- Iniciando Baixando encartes do estado: {sigla_estado} ---")
     driver.get(BASE_URL)
-    time.sleep(3)
+    time.sleep(5)
 
     try:
         print(f"1. Clicando no botão do estado: {sigla_estado}")
