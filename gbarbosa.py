@@ -43,7 +43,7 @@ def capturar_encarte(driver: webdriver.Chrome, state_sigla: str, page_number: in
             
             print(f"   -- Movendo o elemento da página {page_number} para visualização...")
             driver.execute_script("arguments[0].scrollIntoView(true);", page_element)
-            time.sleep(5) 
+            time.sleep(10) 
             
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             file_name = f"GBarbosa_{state_sigla}_Pag{page_number}_{timestamp}.png"
